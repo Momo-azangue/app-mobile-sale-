@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { listInvoices, listSales } from '../api/services';
 import { getErrorMessage } from '../api/errors';
 import { formatCurrency, formatDate } from '../utils/format';
 import type { InvoiceResponseDTO, InvoiceStatus, SaleResponseDTO } from '../types/api';
+import { colors, radius, shadows } from '../theme/tokens';
+import { typography } from '../theme/typography';
+import { LoadingState } from '../components/common/LoadingState';
+import { ErrorState } from '../components/common/ErrorState';
+import { EmptyState } from '../components/common/EmptyState';
+import { StatusBadge } from '../components/common/StatusBadge';
+import { ScreenHeader } from '../components/common/ScreenHeader';
+import { SearchField } from '../components/common/SearchField';
 
 interface VentesScreenProps {
   onCreateNew: () => void;
@@ -29,12 +29,6 @@ interface SaleCardData {
   items: number;
   consignment: boolean;
 }
-
-const STATUS_META: Record<InvoiceStatus, { label: string; color: string; background: string }> = {
-  PAYE: { label: 'Payee', color: '#0F766E', background: '#CCFBF1' },
-  IMPAYE: { label: 'Impayee', color: '#B91C1C', background: '#FEE2E2' },
-  PARTIEL: { label: 'Partielle', color: '#7C3AED', background: '#EDE9FE' },
-};
 
 function toSaleCards(sales: SaleResponseDTO[], invoices: InvoiceResponseDTO[]): SaleCardData[] {
   const invoiceBySaleId = new Map<string, InvoiceResponseDTO>();
@@ -98,24 +92,25 @@ export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) 
     });
   }, [salesCards, searchTerm, filter]);
 
+  if (loading) {
+    return <LoadingState message='Chargement ventes...' />;
+  }
+
+  if (error) {
+    return <ErrorState title='Erreur ventes' message={error} onRetry={() => void loadSales()} />;
+  }
+
   return (
     <View style={styles.wrapper}>
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Ventes</Text>
-          <Text style={styles.subtitle}>GET /sales + GET /invoices</Text>
-        </View>
+        <ScreenHeader title='Ventes' subtitle='Historique des ventes et suivi facturation' />
 
-        <View style={styles.searchBox}>
-          <Feather name='search' size={18} color='#9CA3AF' style={styles.searchIcon} />
-          <TextInput
-            placeholder='Rechercher un client...'
-            placeholderTextColor='#9CA3AF'
-            value={searchTerm}
-            onChangeText={setSearchTerm}
-            style={styles.searchInput}
-          />
-        </View>
+        <SearchField
+          value={searchTerm}
+          onChangeText={setSearchTerm}
+          placeholder='Rechercher un client...'
+          style={styles.searchBox}
+        />
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
           {[
@@ -137,60 +132,47 @@ export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) 
           })}
         </ScrollView>
 
-        {loading ? (
-          <View style={styles.centered}>
-            <ActivityIndicator color='#4338CA' />
-            <Text style={styles.centeredText}>Chargement ventes...</Text>
-          </View>
-        ) : error ? (
-          <View style={styles.centered}>
-            <Text style={styles.errorTitle}>Erreur ventes</Text>
-            <Text style={styles.errorText}>{error}</Text>
-            <Pressable style={styles.retryButton} onPress={() => void loadSales()}>
-              <Text style={styles.retryText}>Reessayer</Text>
-            </Pressable>
-          </View>
-        ) : filteredSales.length === 0 ? (
-          <View style={styles.centered}>
-            <Text style={styles.centeredText}>Aucune vente</Text>
-          </View>
+        {filteredSales.length === 0 ? (
+          <EmptyState
+            icon='shopping-cart'
+            title='Aucune vente'
+            description='Commencez par creer une vente pour suivre vos revenus.'
+            actionLabel='Nouvelle vente'
+            onAction={onCreateNew}
+          />
         ) : (
           <View style={styles.list}>
-            {filteredSales.map((sale) => {
-              const meta = STATUS_META[sale.status];
-              return (
-                <View key={sale.id} style={styles.card}>
-                  <View style={styles.cardRow}>
-                    <View style={styles.cardLeft}>
-                      <View style={styles.cardHeader}>
-                        <Text style={styles.client}>{sale.clientName}</Text>
-                        {sale.consignment ? (
-                          <View style={styles.tag}>
-                            <Text style={styles.tagText}>Consignation</Text>
-                          </View>
-                        ) : null}
-                      </View>
-                      <Text style={styles.cardMeta}>
-                        {sale.items} article(s) - {formatDate(sale.date)}
-                      </Text>
+            {filteredSales.map((sale) => (
+              <View key={sale.id} style={styles.card}>
+                <View style={styles.cardRow}>
+                  <View style={styles.cardLeft}>
+                    <View style={styles.cardHeader}>
+                      <Text style={styles.client}>{sale.clientName}</Text>
+                      {sale.consignment ? (
+                        <View style={styles.tag}>
+                          <Text style={styles.tagText}>Consignation</Text>
+                        </View>
+                      ) : null}
                     </View>
 
-                    <View style={styles.cardRight}>
-                      <Text style={styles.amount}>{formatCurrency(sale.montantTotal)}</Text>
-                      <View style={[styles.statusBadge, { backgroundColor: meta.background }]}>
-                        <Text style={[styles.statusLabel, { color: meta.color }]}>{meta.label}</Text>
-                      </View>
-                    </View>
+                    <Text style={styles.cardMeta}>
+                      {sale.items} article(s) - {formatDate(sale.date)}
+                    </Text>
+                  </View>
+
+                  <View style={styles.cardRight}>
+                    <Text style={styles.amount}>{formatCurrency(sale.montantTotal)}</Text>
+                    <StatusBadge status={sale.status} />
                   </View>
                 </View>
-              );
-            })}
+              </View>
+            ))}
           </View>
         )}
       </ScrollView>
 
       <Pressable style={styles.fab} onPress={onCreateNew}>
-        <Feather name='plus' size={24} color='#FFFFFF' />
+        <Feather name='plus' size={24} color={colors.white} />
       </Pressable>
     </View>
   );
@@ -199,45 +181,15 @@ export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) 
 const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.neutral50,
   },
   content: {
     paddingBottom: 120,
     paddingHorizontal: 16,
     paddingTop: 24,
   },
-  header: {
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  subtitle: {
-    marginTop: 4,
-    fontSize: 14,
-    color: '#6B7280',
-  },
   searchBox: {
-    position: 'relative',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
     marginBottom: 16,
-  },
-  searchIcon: {
-    position: 'absolute',
-    left: 14,
-    top: 14,
-  },
-  searchInput: {
-    paddingVertical: 12,
-    paddingLeft: 44,
-    paddingRight: 16,
-    fontSize: 16,
-    color: '#111827',
   },
   filters: {
     paddingVertical: 4,
@@ -245,59 +197,35 @@ const styles = StyleSheet.create({
   },
   filterChip: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 999,
+    paddingVertical: 9,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#FFFFFF',
+    borderColor: colors.neutral300,
+    backgroundColor: colors.white,
     marginRight: 12,
   },
   filterChipActive: {
-    backgroundColor: '#4338CA',
-    borderColor: '#4338CA',
+    backgroundColor: colors.primary50,
+    borderColor: colors.primary200,
   },
   filterLabel: {
-    fontSize: 14,
-    color: '#4B5563',
-    fontWeight: '500',
+    ...typography.label,
+    color: colors.neutral600,
   },
   filterLabelActive: {
-    color: '#FFFFFF',
-  },
-  centered: {
-    marginTop: 20,
-    alignItems: 'center',
-    gap: 8,
-  },
-  centeredText: {
-    color: '#6B7280',
-  },
-  errorTitle: {
-    fontWeight: '700',
-    color: '#B91C1C',
-  },
-  errorText: {
-    color: '#6B7280',
-    textAlign: 'center',
-  },
-  retryButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#E0E7FF',
-  },
-  retryText: {
-    color: '#4338CA',
-    fontWeight: '700',
+    color: colors.primary600,
   },
   list: {
     marginTop: 16,
     gap: 12,
   },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.neutral200,
     padding: 16,
+    ...shadows.sm,
   },
   cardRow: {
     flexDirection: 'row',
@@ -312,44 +240,32 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   client: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
+    ...typography.bodyMedium,
+    color: colors.neutral900,
   },
   tag: {
-    borderRadius: 999,
+    borderRadius: radius.pill,
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: '#E0E7FF',
+    paddingVertical: 5,
+    backgroundColor: colors.primary100,
   },
   tagText: {
-    fontSize: 12,
-    color: '#4338CA',
-    fontWeight: '600',
+    ...typography.captionMedium,
+    color: colors.primary600,
   },
   cardMeta: {
     marginTop: 6,
-    fontSize: 13,
-    color: '#6B7280',
+    ...typography.caption,
+    color: colors.neutral500,
   },
   cardRight: {
     alignItems: 'flex-end',
     justifyContent: 'space-between',
+    gap: 8,
   },
   amount: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  statusBadge: {
-    marginTop: 8,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  statusLabel: {
-    fontSize: 12,
-    fontWeight: '600',
+    ...typography.bodyMedium,
+    color: colors.neutral900,
   },
   fab: {
     position: 'absolute',
@@ -360,11 +276,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#4338CA',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    backgroundColor: colors.primary600,
+    ...shadows.md,
   },
 });

@@ -1,11 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { listProducts, listStockMovements } from '../api/services';
 import { getErrorMessage } from '../api/errors';
 import { formatDate } from '../utils/format';
 import type { MovementType, ProductResponseDTO, StockMovementResponseDTO } from '../types/api';
+import { colors, radius, shadows } from '../theme/tokens';
+import { typography } from '../theme/typography';
+import { LoadingState } from '../components/common/LoadingState';
+import { ErrorState } from '../components/common/ErrorState';
+import { EmptyState } from '../components/common/EmptyState';
+import { ScreenHeader } from '../components/common/ScreenHeader';
+import { SearchField } from '../components/common/SearchField';
 
 interface StocksScreenProps {
   refreshSignal: number;
@@ -15,6 +22,13 @@ interface ComputedStock {
   available: number;
   consigned: number;
 }
+
+type MovementVisual = {
+  icon: ComponentProps<typeof Feather>['name'];
+  color: string;
+  background: string;
+  sign: '+' | '-';
+};
 
 function movementToDelta(type: MovementType, quantity: number): ComputedStock {
   switch (type) {
@@ -35,21 +49,22 @@ function movementToDelta(type: MovementType, quantity: number): ComputedStock {
   }
 }
 
-function movementStyle(type: MovementType) {
+function movementVisual(type: MovementType): MovementVisual {
   switch (type) {
     case 'ENTREE':
     case 'PRODUCTION':
-      return { icon: 'trending-up' as const, color: '#0F766E', background: '#D1FAE5' };
+      return { icon: 'trending-up', color: colors.success600, background: colors.success100, sign: '+' };
     case 'SORTIE':
     case 'ENVOI':
     case 'MISE_AU_REBUT':
-      return { icon: 'trending-down' as const, color: '#DC2626', background: '#FEE2E2' };
+      return { icon: 'trending-down', color: colors.danger500, background: colors.danger100, sign: '-' };
     case 'CONSIGNATION_ENTREE':
+      return { icon: 'repeat', color: colors.warning600, background: colors.warning100, sign: '+' };
     case 'CONSIGNATION_SORTIE':
-      return { icon: 'refresh-ccw' as const, color: '#7C3AED', background: '#EDE9FE' };
+      return { icon: 'repeat', color: colors.warning600, background: colors.warning100, sign: '-' };
     case 'TRANSFERT':
     default:
-      return { icon: 'repeat' as const, color: '#4338CA', background: '#E0E7FF' };
+      return { icon: 'shuffle', color: colors.primary600, background: colors.primary100, sign: '+' };
   }
 }
 
@@ -67,11 +82,7 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
     setError(null);
 
     try {
-      const [fetchedProducts, fetchedMovements] = await Promise.all([
-        listProducts(),
-        listStockMovements(),
-      ]);
-
+      const [fetchedProducts, fetchedMovements] = await Promise.all([listProducts(), listStockMovements()]);
       setProducts(fetchedProducts);
       setMovements(fetchedMovements);
     } catch (loadError) {
@@ -84,6 +95,8 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
   useEffect(() => {
     void loadStockData();
   }, [loadStockData, refreshSignal]);
+
+  const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
 
   const stockByProduct = useMemo(() => {
     const byProduct = new Map<string, ComputedStock>();
@@ -114,12 +127,17 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
     });
   }, [movements]);
 
+  if (loading) {
+    return <LoadingState message='Chargement stock...' />;
+  }
+
+  if (error) {
+    return <ErrorState title='Erreur stock' message={error} onRetry={() => void loadStockData()} />;
+  }
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Gestion de stock</Text>
-        <Text style={styles.subtitle}>GET /products + GET /stock-movements</Text>
-      </View>
+      <ScreenHeader title='Gestion de stock' subtitle='Suivi produits et mouvements' />
 
       <View style={styles.tabs}>
         <Pressable
@@ -136,83 +154,87 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
         </Pressable>
       </View>
 
-      {loading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color='#4338CA' />
-          <Text style={styles.centeredText}>Chargement stock...</Text>
-        </View>
-      ) : error ? (
-        <View style={styles.centered}>
-          <Text style={styles.errorTitle}>Erreur stock</Text>
-          <Text style={styles.errorText}>{error}</Text>
-          <Pressable style={styles.retryButton} onPress={() => void loadStockData()}>
-            <Text style={styles.retryText}>Reessayer</Text>
-          </Pressable>
-        </View>
-      ) : activeTab === 'produits' ? (
-        <View style={styles.section}>
+      {activeTab === 'produits' ? (
+        <>
           <View style={styles.searchBox}>
-            <Feather name='search' size={18} color='#9CA3AF' style={styles.searchIcon} />
-            <TextInput
-              placeholder='Rechercher un produit...'
-              placeholderTextColor='#9CA3AF'
+            <SearchField
               value={query}
               onChangeText={setQuery}
-              style={styles.searchInput}
+              placeholder='Rechercher un produit...'
             />
           </View>
 
-          <View style={styles.list}>
-            {filteredProducts.map((product) => {
-              const stock = stockByProduct.get(product.id) ?? { available: 0, consigned: 0 };
-              return (
-                <View key={product.id} style={styles.card}>
-                  <Text style={styles.productName}>{product.name}</Text>
-                  <Text style={styles.productMeta}>Categorie: {product.categoryName ?? '-'}</Text>
+          {filteredProducts.length === 0 ? (
+            <EmptyState
+              icon='package'
+              title='Aucun produit'
+              description='Ajoutez des produits ou modifiez votre recherche.'
+            />
+          ) : (
+            <View style={styles.list}>
+              {filteredProducts.map((product) => {
+                const stock = stockByProduct.get(product.id) ?? { available: 0, consigned: 0 };
+                return (
+                  <View key={product.id} style={styles.card}>
+                    <View style={styles.productHeader}>
+                      <Text style={styles.productName}>{product.name}</Text>
+                      <View style={styles.categoryChip}>
+                        <Text style={styles.categoryText}>{product.categoryName ?? 'Sans categorie'}</Text>
+                      </View>
+                    </View>
 
-                  <View style={styles.cardGrid}>
-                    <View>
-                      <Text style={styles.gridLabel}>Stock calcule</Text>
-                      <Text style={styles.gridValue}>{stock.available}</Text>
-                    </View>
-                    <View>
-                      <Text style={styles.gridLabel}>Consignation calculee</Text>
-                      <Text style={styles.gridValue}>{stock.consigned}</Text>
+                    <View style={styles.cardGrid}>
+                      <View style={styles.metricBlock}>
+                        <Text style={styles.gridLabel}>Stock disponible</Text>
+                        <Text style={styles.gridValue}>{stock.available}</Text>
+                      </View>
+                      <View style={styles.metricBlock}>
+                        <Text style={styles.gridLabel}>Stock consigne</Text>
+                        <Text style={styles.gridValue}>{stock.consigned}</Text>
+                      </View>
                     </View>
                   </View>
-                </View>
-              );
-            })}
-          </View>
-        </View>
+                );
+              })}
+            </View>
+          )}
+        </>
+      ) : sortedMovements.length === 0 ? (
+        <EmptyState
+          icon='repeat'
+          title='Aucun mouvement'
+          description='Les mouvements de stock apparaitront ici.'
+        />
       ) : (
-        <View style={styles.section}>
-          <View style={styles.list}>
-            {sortedMovements.map((movement) => {
-              const iconStyle = movementStyle(movement.type);
-              const sign = movement.type.includes('SORTIE') || movement.type === 'SORTIE' || movement.type === 'ENVOI' || movement.type === 'MISE_AU_REBUT' ? '-' : '+';
-              return (
-                <View key={movement.id} style={styles.card}>
-                  <View style={styles.movementHeader}>
-                    <View style={[styles.iconBubble, { backgroundColor: iconStyle.background }]}>
-                      <Feather name={iconStyle.icon} size={18} color={iconStyle.color} />
-                    </View>
-                    <View style={styles.movementText}>
-                      <Text style={styles.productName}>Produit: {movement.productId}</Text>
-                      <Text style={styles.productMeta}>{movement.reason || movement.source || '-'}</Text>
-                    </View>
-                    <Text style={styles.movementQty}>
-                      {sign}
-                      {movement.quantity}
-                    </Text>
+        <View style={styles.list}>
+          {sortedMovements.map((movement) => {
+            const visual = movementVisual(movement.type);
+            const productName = productById.get(movement.productId)?.name ?? movement.productId;
+
+            return (
+              <View key={movement.id} style={styles.card}>
+                <View style={styles.movementHeader}>
+                  <View style={[styles.iconBubble, { backgroundColor: visual.background }]}>
+                    <Feather name={visual.icon} size={18} color={visual.color} />
                   </View>
-                  <Text style={styles.gridLabel}>
-                    {movement.type} - {formatDate(movement.date)}
+
+                  <View style={styles.movementText}>
+                    <Text style={styles.productName}>{productName}</Text>
+                    <Text style={styles.productMeta}>{movement.reason || movement.source || '-'}</Text>
+                  </View>
+
+                  <Text style={styles.movementQty}>
+                    {visual.sign}
+                    {movement.quantity}
                   </Text>
                 </View>
-              );
-            })}
-          </View>
+
+                <Text style={styles.gridLabel}>
+                  {movement.type} - {formatDate(movement.date)}
+                </Text>
+              </View>
+            );
+          })}
         </View>
       )}
     </ScrollView>
@@ -222,132 +244,89 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.neutral50,
   },
   content: {
     paddingBottom: 96,
     paddingHorizontal: 16,
     paddingTop: 24,
   },
-  header: {
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  subtitle: {
-    marginTop: 4,
-    fontSize: 14,
-    color: '#6B7280',
-  },
   tabs: {
     flexDirection: 'row',
-    backgroundColor: '#E5E7EB',
-    borderRadius: 999,
+    backgroundColor: colors.neutral100,
+    borderRadius: radius.pill,
     padding: 4,
     marginBottom: 16,
   },
   tabButton: {
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 999,
+    borderRadius: radius.pill,
     alignItems: 'center',
   },
   tabButtonActive: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.white,
+    ...shadows.sm,
   },
   tabLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4B5563',
+    ...typography.label,
+    color: colors.neutral600,
   },
   tabLabelActive: {
-    color: '#4338CA',
-  },
-  section: {
-    marginTop: 4,
+    color: colors.primary600,
   },
   searchBox: {
-    position: 'relative',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
     marginBottom: 16,
   },
-  searchIcon: {
-    position: 'absolute',
-    left: 14,
-    top: 14,
-  },
-  searchInput: {
-    paddingVertical: 12,
-    paddingLeft: 44,
-    paddingRight: 16,
-    fontSize: 16,
-    color: '#111827',
-  },
-  centered: {
-    marginTop: 20,
-    alignItems: 'center',
-    gap: 8,
-  },
-  centeredText: {
-    color: '#6B7280',
-  },
-  errorTitle: {
-    fontWeight: '700',
-    color: '#B91C1C',
-  },
-  errorText: {
-    color: '#6B7280',
-    textAlign: 'center',
-  },
-  retryButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#E0E7FF',
-  },
-  retryText: {
-    color: '#4338CA',
-    fontWeight: '700',
-  },
   list: {
-    marginTop: 4,
     gap: 12,
   },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.neutral200,
     padding: 16,
+    ...shadows.sm,
+  },
+  productHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    gap: 12,
   },
   productName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
+    flex: 1,
+    ...typography.bodyMedium,
+    color: colors.neutral900,
   },
-  productMeta: {
-    marginTop: 4,
-    fontSize: 13,
-    color: '#6B7280',
+  categoryChip: {
+    borderRadius: radius.pill,
+    backgroundColor: colors.primary50,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  categoryText: {
+    ...typography.captionMedium,
+    color: colors.primary600,
   },
   cardGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 12,
+    gap: 16,
+  },
+  metricBlock: {
+    flex: 1,
   },
   gridLabel: {
-    fontSize: 12,
-    color: '#6B7280',
+    ...typography.caption,
+    color: colors.neutral500,
   },
   gridValue: {
     marginTop: 4,
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#111827',
+    ...typography.bodyMedium,
+    color: colors.neutral900,
   },
   movementHeader: {
     flexDirection: 'row',
@@ -356,15 +335,19 @@ const styles = StyleSheet.create({
   },
   iconBubble: {
     padding: 10,
-    borderRadius: 12,
+    borderRadius: radius.md,
     marginRight: 12,
   },
   movementText: {
     flex: 1,
   },
+  productMeta: {
+    marginTop: 4,
+    ...typography.caption,
+    color: colors.neutral500,
+  },
   movementQty: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
+    ...typography.bodyMedium,
+    color: colors.neutral900,
   },
 });

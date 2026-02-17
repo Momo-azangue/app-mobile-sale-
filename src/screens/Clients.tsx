@@ -1,19 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { createClient, deleteClient, listClients } from '../api/services';
 import { getErrorMessage } from '../api/errors';
 import type { ClientResponseDTO } from '../types/api';
+import { colors, radius, shadows } from '../theme/tokens';
+import { typography } from '../theme/typography';
+import { EmptyState } from '../components/common/EmptyState';
+import { ErrorState } from '../components/common/ErrorState';
+import { LoadingState } from '../components/common/LoadingState';
+import { SearchField } from '../components/common/SearchField';
+import { ScreenHeader } from '../components/common/ScreenHeader';
+import { AppButton } from '../components/common/AppButton';
 
 interface ClientsScreenProps {
   refreshSignal: number;
@@ -102,12 +101,17 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
     ]);
   };
 
+  if (loading) {
+    return <LoadingState message='Chargement clients...' />;
+  }
+
+  if (error) {
+    return <ErrorState title='Erreur clients' message={error} onRetry={() => void loadClients()} />;
+  }
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Clients</Text>
-        <Text style={styles.subtitle}>CRUD API: GET/POST/DELETE /clients</Text>
-      </View>
+      <ScreenHeader title='Clients' subtitle='Gestion de la base clients' />
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>Nouveau client</Text>
@@ -117,14 +121,14 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
           value={name}
           onChangeText={setName}
           placeholder='Nom'
-          placeholderTextColor='#9CA3AF'
+          placeholderTextColor={colors.neutral400}
         />
         <TextInput
           style={styles.input}
           value={email}
           onChangeText={setEmail}
           placeholder='Email (optionnel)'
-          placeholderTextColor='#9CA3AF'
+          placeholderTextColor={colors.neutral400}
           keyboardType='email-address'
           autoCapitalize='none'
         />
@@ -133,46 +137,28 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
           value={phone}
           onChangeText={setPhone}
           placeholder='Telephone ex: +22501234567'
-          placeholderTextColor='#9CA3AF'
+          placeholderTextColor={colors.neutral400}
         />
 
-        <Pressable
-          style={[styles.button, saving && styles.buttonDisabled]}
-          onPress={handleCreateClient}
-          disabled={saving}
-        >
-          <Text style={styles.buttonText}>{saving ? 'Creation...' : 'Ajouter client'}</Text>
-        </Pressable>
+        <View style={styles.buttonWrap}>
+          <AppButton
+            label={saving ? 'Creation...' : 'Ajouter client'}
+            onPress={() => {
+              void handleCreateClient();
+            }}
+            disabled={saving}
+          />
+        </View>
       </View>
 
-      <View style={styles.searchBox}>
-        <Feather name='search' size={18} color='#9CA3AF' style={styles.searchIcon} />
-        <TextInput
-          placeholder='Rechercher un client...'
-          placeholderTextColor='#9CA3AF'
-          value={searchTerm}
-          onChangeText={setSearchTerm}
-          style={styles.searchInput}
-        />
-      </View>
+      <SearchField
+        value={searchTerm}
+        onChangeText={setSearchTerm}
+        placeholder='Rechercher un client...'
+      />
 
-      {loading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color='#4338CA' />
-          <Text style={styles.centeredText}>Chargement clients...</Text>
-        </View>
-      ) : error ? (
-        <View style={styles.centered}>
-          <Text style={styles.errorTitle}>Erreur clients</Text>
-          <Text style={styles.errorText}>{error}</Text>
-          <Pressable style={styles.retryButton} onPress={() => void loadClients()}>
-            <Text style={styles.retryText}>Reessayer</Text>
-          </Pressable>
-        </View>
-      ) : filteredClients.length === 0 ? (
-        <View style={styles.centered}>
-          <Text style={styles.centeredText}>Aucun client</Text>
-        </View>
+      {filteredClients.length === 0 ? (
+        <EmptyState icon='users' title='Aucun client' description='Ajoutez votre premier client pour demarrer les ventes.' />
       ) : (
         <View style={styles.list}>
           {filteredClients.map((client) => (
@@ -180,7 +166,7 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
               <View style={styles.clientHeader}>
                 <Text style={styles.clientName}>{client.name}</Text>
                 <Pressable onPress={() => handleDeleteClient(client)}>
-                  <Feather name='trash-2' size={18} color='#B91C1C' />
+                  <Feather name='trash-2' size={18} color={colors.danger600} />
                 </Pressable>
               </View>
 
@@ -197,114 +183,51 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.neutral50,
   },
   content: {
     paddingBottom: 96,
     paddingHorizontal: 16,
     paddingTop: 24,
   },
-  header: {
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  subtitle: {
-    marginTop: 4,
-    fontSize: 14,
-    color: '#6B7280',
-  },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.neutral200,
     padding: 16,
     marginBottom: 16,
+    ...shadows.sm,
   },
   sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    ...typography.bodyMedium,
     marginBottom: 10,
-    color: '#111827',
+    color: colors.neutral900,
   },
   input: {
-    borderRadius: 10,
+    ...typography.body,
+    borderRadius: radius.sm,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#FFFFFF',
+    borderColor: colors.neutral300,
+    backgroundColor: colors.white,
     paddingHorizontal: 14,
     paddingVertical: 10,
     marginTop: 8,
   },
-  button: {
+  buttonWrap: {
     marginTop: 12,
-    backgroundColor: '#4338CA',
-    borderRadius: 999,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  searchBox: {
-    position: 'relative',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  searchIcon: {
-    position: 'absolute',
-    left: 14,
-    top: 14,
-  },
-  searchInput: {
-    paddingVertical: 12,
-    paddingLeft: 44,
-    paddingRight: 16,
-    fontSize: 16,
-    color: '#111827',
-  },
-  centered: {
-    marginTop: 20,
-    alignItems: 'center',
-    gap: 8,
-  },
-  centeredText: {
-    color: '#6B7280',
-  },
-  errorTitle: {
-    fontWeight: '700',
-    color: '#B91C1C',
-  },
-  errorText: {
-    color: '#6B7280',
-    textAlign: 'center',
-  },
-  retryButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#E0E7FF',
-  },
-  retryText: {
-    color: '#4338CA',
-    fontWeight: '700',
   },
   list: {
     marginTop: 16,
     gap: 12,
   },
   clientCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.neutral200,
     padding: 14,
+    ...shadows.sm,
   },
   clientHeader: {
     flexDirection: 'row',
@@ -312,12 +235,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   clientName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
+    ...typography.bodyMedium,
+    color: colors.neutral900,
   },
   clientMeta: {
     marginTop: 6,
-    color: '#6B7280',
+    ...typography.label,
+    color: colors.neutral500,
   },
 });

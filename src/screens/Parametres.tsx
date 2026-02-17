@@ -1,18 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { createCommerceSettings, listCommerceSettings } from '../api/services';
 import { getErrorMessage } from '../api/errors';
+import { colors, radius, shadows } from '../theme/tokens';
+import { typography } from '../theme/typography';
+import { LoadingState } from '../components/common/LoadingState';
+import { ErrorState } from '../components/common/ErrorState';
+import { ScreenHeader } from '../components/common/ScreenHeader';
+import { AppButton } from '../components/common/AppButton';
 
 interface ParametresScreenProps {
   refreshSignal: number;
@@ -20,7 +17,11 @@ interface ParametresScreenProps {
   onLogout: () => Promise<void>;
 }
 
-export function ParametresScreen({ refreshSignal, onSettingsChanged, onLogout }: ParametresScreenProps) {
+export function ParametresScreen({
+  refreshSignal,
+  onSettingsChanged,
+  onLogout,
+}: ParametresScreenProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,37 +94,21 @@ export function ParametresScreen({ refreshSignal, onSettingsChanged, onLogout }:
   };
 
   if (loading) {
-    return (
-      <View style={styles.centered}>
-        <ActivityIndicator color='#4338CA' />
-        <Text style={styles.centeredText}>Chargement parametres...</Text>
-      </View>
-    );
+    return <LoadingState message='Chargement parametres...' />;
   }
 
   if (error) {
-    return (
-      <View style={styles.centered}>
-        <Text style={styles.errorTitle}>Erreur parametres</Text>
-        <Text style={styles.errorText}>{error}</Text>
-        <Pressable style={styles.retryButton} onPress={() => void loadSettings()}>
-          <Text style={styles.retryText}>Reessayer</Text>
-        </Pressable>
-      </View>
-    );
+    return <ErrorState title='Erreur parametres' message={error} onRetry={() => void loadSettings()} />;
   }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Parametres</Text>
-        <Text style={styles.subtitle}>GET/POST /commerce-settings</Text>
-      </View>
+      <ScreenHeader title='Parametres' subtitle='Configuration boutique et session' />
 
       <View style={styles.card}>
         <View style={styles.sectionHeader}>
-          <Feather name='shopping-bag' size={18} color='#4338CA' />
-          <Text style={styles.sectionTitle}>Boutique (MVP)</Text>
+          <Feather name='shopping-bag' size={18} color={colors.primary600} />
+          <Text style={styles.sectionTitle}>Boutique</Text>
         </View>
 
         <View style={styles.formGroup}>
@@ -133,28 +118,35 @@ export function ParametresScreen({ refreshSignal, onSettingsChanged, onLogout }:
 
         <View style={styles.formGroup}>
           <Text style={styles.label}>Devise</Text>
-          <TextInput value={currency} onChangeText={setCurrency} style={styles.input} autoCapitalize='characters' />
+          <TextInput
+            value={currency}
+            onChangeText={setCurrency}
+            style={styles.input}
+            autoCapitalize='characters'
+            maxLength={3}
+          />
         </View>
 
         <Text style={styles.note}>
-          Champs non supportes par l'API actuelle masques temporairement: adresse, email, notifications.
+          Champs non supportes par l API actuelle masques pour le MVP: adresse, email boutique, notifications.
         </Text>
 
-        <Pressable style={[styles.primaryButton, saving && styles.buttonDisabled]} onPress={handleSave} disabled={saving}>
-          <Text style={styles.primaryButtonLabel}>{saving ? 'Sauvegarde...' : 'Sauvegarder'}</Text>
-        </Pressable>
+        <AppButton
+          label={saving ? 'Sauvegarde...' : 'Sauvegarder'}
+          onPress={() => {
+            void handleSave();
+          }}
+          disabled={saving}
+        />
       </View>
 
       <View style={styles.card}>
         <View style={styles.sectionHeader}>
-          <Feather name='shield' size={18} color='#4338CA' />
+          <Feather name='shield' size={18} color={colors.primary600} />
           <Text style={styles.sectionTitle}>Session</Text>
         </View>
 
-        <Pressable style={styles.logoutRow} onPress={handleLogout}>
-          <Feather name='log-out' size={18} color='#DC2626' />
-          <Text style={styles.logoutText}>Deconnexion</Text>
-        </Pressable>
+        <AppButton label='Deconnexion' variant='danger' onPress={handleLogout} />
       </View>
     </ScrollView>
   );
@@ -163,7 +155,7 @@ export function ParametresScreen({ refreshSignal, onSettingsChanged, onLogout }:
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.neutral50,
   },
   content: {
     paddingBottom: 96,
@@ -171,108 +163,43 @@ const styles = StyleSheet.create({
     paddingTop: 24,
     gap: 16,
   },
-  header: {
-    gap: 4,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#6B7280',
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#F9FAFB',
-    paddingHorizontal: 20,
-  },
-  centeredText: {
-    color: '#6B7280',
-  },
-  errorTitle: {
-    color: '#B91C1C',
-    fontWeight: '700',
-  },
-  errorText: {
-    color: '#6B7280',
-    textAlign: 'center',
-  },
-  retryButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#E0E7FF',
-  },
-  retryText: {
-    color: '#4338CA',
-    fontWeight: '700',
-  },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.neutral200,
     padding: 16,
     gap: 14,
+    ...shadows.sm,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 10,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
+    ...typography.bodyMedium,
+    color: colors.neutral900,
   },
   formGroup: {
     gap: 8,
   },
   label: {
-    fontSize: 13,
-    color: '#4B5563',
-    fontWeight: '600',
+    ...typography.label,
+    color: colors.neutral600,
   },
   input: {
-    borderRadius: 12,
+    ...typography.body,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#FFFFFF',
+    borderColor: colors.neutral300,
+    backgroundColor: colors.white,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    fontSize: 16,
-    color: '#111827',
+    color: colors.neutral900,
   },
   note: {
-    fontSize: 12,
-    color: '#6B7280',
-  },
-  primaryButton: {
-    borderRadius: 999,
-    paddingVertical: 14,
-    backgroundColor: '#4338CA',
-    alignItems: 'center',
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  primaryButtonLabel: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  logoutRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 8,
-  },
-  logoutText: {
-    fontSize: 14,
-    color: '#DC2626',
-    fontWeight: '700',
+    ...typography.caption,
+    color: colors.neutral500,
   },
 });

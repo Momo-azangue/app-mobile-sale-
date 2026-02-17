@@ -1,8 +1,12 @@
-﻿import { ComponentProps } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { ComponentProps } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
-const TABS: Array<{ id: string; label: string; icon: ComponentProps<typeof Feather>['name'] }> = [
+import type { NavigationTab } from './SideNavigation';
+import { colors, radius } from '../theme/tokens';
+import { typography } from '../theme/typography';
+
+const TABS: Array<{ id: NavigationTab; label: string; icon: ComponentProps<typeof Feather>['name'] }> = [
   { id: 'dashboard', label: 'Tableau', icon: 'home' },
   { id: 'ventes', label: 'Ventes', icon: 'shopping-cart' },
   { id: 'stocks', label: 'Stocks', icon: 'package' },
@@ -11,8 +15,8 @@ const TABS: Array<{ id: string; label: string; icon: ComponentProps<typeof Feath
 ];
 
 interface BottomNavigationProps {
-  activeTab: string;
-  onTabChange: (tab: string) => void;
+  activeTab: NavigationTab;
+  onTabChange: (tab: NavigationTab) => void;
 }
 
 export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationProps) {
@@ -49,30 +53,33 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
+    borderTopColor: colors.neutral200,
+    backgroundColor: colors.white,
+    paddingHorizontal: 6,
+    paddingTop: 6,
+    paddingBottom: 8,
   },
   tab: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
+    paddingVertical: 8,
     gap: 4,
+    borderRadius: radius.md,
   },
   tabActive: {
-    backgroundColor: '#EEF2FF',
+    backgroundColor: colors.primary50,
   },
   tabPressed: {
-    backgroundColor: '#F3F4F6',
+    backgroundColor: colors.neutral100,
   },
   label: {
-    fontSize: 12,
-    fontWeight: '500',
+    ...typography.caption,
   },
   activeColor: {
-    color: '#4338CA',
+    color: colors.primary600,
   },
   inactiveColor: {
-    color: '#6B7280',
+    color: colors.neutral500,
   },
 });

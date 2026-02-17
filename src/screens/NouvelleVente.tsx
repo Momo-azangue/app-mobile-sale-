@@ -1,18 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { createSale, listClients, listProducts } from '../api/services';
 import { getErrorMessage } from '../api/errors';
 import type { ClientResponseDTO, InvoiceStatus, ProductResponseDTO, SaleRequestDTO } from '../types/api';
+import { colors, radius, shadows } from '../theme/tokens';
+import { typography } from '../theme/typography';
+import { LoadingState } from '../components/common/LoadingState';
+import { ErrorState } from '../components/common/ErrorState';
+import { EmptyState } from '../components/common/EmptyState';
+import { ScreenHeader } from '../components/common/ScreenHeader';
+import { AppButton } from '../components/common/AppButton';
 
 interface NouvelleVenteProps {
   onBack: () => void;
@@ -74,9 +72,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
     void loadReferences();
   }, [loadReferences, refreshSignal]);
 
-  const productById = useMemo(() => {
-    return new Map(products.map((product) => [product.id, product]));
-  }, [products]);
+  const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
 
   const updateLine = (lineId: string, patch: Partial<SaleLineForm>) => {
     setLines((previous) => previous.map((line) => (line.id === lineId ? { ...line, ...patch } : line)));
@@ -108,7 +104,12 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
     });
 
     const invalidLine = mappedProducts.find(
-      (line) => !line.productId || !Number.isFinite(line.quantity) || line.quantity <= 0 || !Number.isFinite(line.priceAtSale) || line.priceAtSale <= 0
+      (line) =>
+        !line.productId ||
+        !Number.isFinite(line.quantity) ||
+        line.quantity <= 0 ||
+        !Number.isFinite(line.priceAtSale) ||
+        line.priceAtSale <= 0,
     );
 
     if (invalidLine) {
@@ -150,22 +151,37 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   };
 
   if (loading) {
+    return <LoadingState message='Chargement references...' />;
+  }
+
+  if (error) {
+    return <ErrorState title='Erreur references' message={error} onRetry={() => void loadReferences()} />;
+  }
+
+  if (clients.length === 0) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color='#4338CA' />
-        <Text style={styles.centeredText}>Chargement references...</Text>
+      <View style={styles.centeredWrap}>
+        <EmptyState
+          icon='users'
+          title='Aucun client'
+          description='Ajoutez un client avant de creer une vente.'
+          actionLabel='Retour'
+          onAction={onBack}
+        />
       </View>
     );
   }
 
-  if (error) {
+  if (products.length === 0) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.errorTitle}>Erreur references</Text>
-        <Text style={styles.errorText}>{error}</Text>
-        <Pressable style={styles.retryButton} onPress={() => void loadReferences()}>
-          <Text style={styles.retryText}>Reessayer</Text>
-        </Pressable>
+      <View style={styles.centeredWrap}>
+        <EmptyState
+          icon='package'
+          title='Aucun produit'
+          description='Ajoutez des produits avant de creer une vente.'
+          actionLabel='Retour'
+          onAction={onBack}
+        />
       </View>
     );
   }
@@ -176,8 +192,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
         <Text style={styles.backLabel}>Retour</Text>
       </Pressable>
 
-      <Text style={styles.title}>Nouvelle vente</Text>
-      <Text style={styles.subtitle}>POST /sales</Text>
+      <ScreenHeader title='Nouvelle vente' subtitle='Creation d une vente et generation de facture' />
 
       <View style={styles.formGroup}>
         <Text style={styles.label}>Client</Text>
@@ -253,9 +268,10 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
                   onChangeText={(value) => updateLine(line.id, { quantity: value })}
                   keyboardType='numeric'
                   placeholder='1'
-                  placeholderTextColor='#9CA3AF'
+                  placeholderTextColor={colors.neutral400}
                 />
               </View>
+
               <View style={[styles.formGroup, styles.flexHalf]}>
                 <Text style={styles.label}>Prix vente</Text>
                 <TextInput
@@ -264,7 +280,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
                   onChangeText={(value) => updateLine(line.id, { priceAtSale: value })}
                   keyboardType='decimal-pad'
                   placeholder='100'
-                  placeholderTextColor='#9CA3AF'
+                  placeholderTextColor={colors.neutral400}
                 />
               </View>
             </View>
@@ -272,13 +288,17 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
         );
       })}
 
-      <Pressable style={styles.secondaryButton} onPress={addLine}>
-        <Text style={styles.secondaryButtonText}>Ajouter une ligne</Text>
-      </Pressable>
+      <AppButton label='Ajouter une ligne' variant='outline' onPress={addLine} />
 
-      <Pressable style={[styles.submitButton, submitting && styles.submitButtonDisabled]} onPress={handleSubmit} disabled={submitting}>
-        <Text style={styles.submitLabel}>{submitting ? 'Creation...' : 'Enregistrer la vente'}</Text>
-      </Pressable>
+      <View style={styles.submitWrap}>
+        <AppButton
+          label={submitting ? 'Creation...' : 'Enregistrer la vente'}
+          onPress={() => {
+            void handleSubmit();
+          }}
+          disabled={submitting}
+        />
+      </View>
     </ScrollView>
   );
 }
@@ -286,72 +306,40 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: colors.neutral50,
   },
   content: {
     paddingBottom: 48,
     paddingHorizontal: 16,
     paddingTop: 24,
   },
-  centered: {
+  centeredWrap: {
     flex: 1,
+    backgroundColor: colors.neutral50,
+    paddingHorizontal: 16,
     justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#F9FAFB',
-  },
-  centeredText: {
-    color: '#6B7280',
-  },
-  errorTitle: {
-    fontWeight: '700',
-    color: '#B91C1C',
-  },
-  errorText: {
-    color: '#6B7280',
-    textAlign: 'center',
-    paddingHorizontal: 20,
-  },
-  retryButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#E0E7FF',
-  },
-  retryText: {
-    color: '#4338CA',
-    fontWeight: '700',
   },
   backButton: {
     alignSelf: 'flex-start',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#E5E7EB',
+    borderRadius: radius.md,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.neutral200,
     marginBottom: 12,
+    ...shadows.sm,
   },
   backLabel: {
-    color: '#374151',
-    fontWeight: '600',
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  subtitle: {
-    marginTop: 4,
-    marginBottom: 20,
-    fontSize: 14,
-    color: '#6B7280',
+    ...typography.label,
+    color: colors.neutral700,
   },
   formGroup: {
     marginBottom: 16,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
+    ...typography.label,
+    color: colors.neutral700,
     marginBottom: 8,
   },
   chipsWrap: {
@@ -362,23 +350,24 @@ const styles = StyleSheet.create({
   chip: {
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 999,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#FFFFFF',
+    borderColor: colors.neutral300,
+    backgroundColor: colors.white,
     marginRight: 8,
     marginBottom: 8,
   },
   chipActive: {
-    borderColor: '#4338CA',
-    backgroundColor: '#EEF2FF',
+    borderColor: colors.primary600,
+    backgroundColor: colors.primary50,
   },
   chipText: {
-    color: '#4B5563',
+    ...typography.label,
+    color: colors.neutral600,
   },
   chipTextActive: {
-    color: '#4338CA',
-    fontWeight: '700',
+    color: colors.primary600,
+    fontFamily: typography.label.fontFamily,
   },
   statusRow: {
     flexDirection: 'row',
@@ -389,28 +378,30 @@ const styles = StyleSheet.create({
   statusChip: {
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 999,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#FFFFFF',
+    borderColor: colors.neutral300,
+    backgroundColor: colors.white,
   },
   statusChipActive: {
-    backgroundColor: '#4338CA',
-    borderColor: '#4338CA',
+    backgroundColor: colors.primary600,
+    borderColor: colors.primary600,
   },
   statusLabel: {
-    fontSize: 14,
-    color: '#4B5563',
-    fontWeight: '500',
+    ...typography.label,
+    color: colors.neutral600,
   },
   statusLabelActive: {
-    color: '#FFFFFF',
+    color: colors.white,
   },
   lineCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.neutral200,
     padding: 14,
     marginBottom: 14,
+    ...shadows.sm,
   },
   lineHeader: {
     flexDirection: 'row',
@@ -419,13 +410,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   lineTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#111827',
+    ...typography.bodyMedium,
+    color: colors.neutral900,
   },
   removeText: {
-    color: '#B91C1C',
-    fontWeight: '600',
+    ...typography.label,
+    color: colors.danger600,
   },
   removeDisabled: {
     opacity: 0.5,
@@ -436,7 +426,8 @@ const styles = StyleSheet.create({
   selectedProductText: {
     marginTop: 8,
     marginBottom: 8,
-    color: '#6B7280',
+    ...typography.caption,
+    color: colors.neutral500,
   },
   row: {
     flexDirection: 'row',
@@ -447,39 +438,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   input: {
-    borderRadius: 12,
+    ...typography.body,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#D1D5DB',
-    backgroundColor: '#FFFFFF',
+    borderColor: colors.neutral300,
+    backgroundColor: colors.white,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    fontSize: 16,
-    color: '#111827',
+    color: colors.neutral900,
   },
-  secondaryButton: {
-    borderRadius: 999,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: '#4338CA',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  secondaryButtonText: {
-    color: '#4338CA',
-    fontWeight: '700',
-  },
-  submitButton: {
-    borderRadius: 999,
-    paddingVertical: 16,
-    backgroundColor: '#4338CA',
-    alignItems: 'center',
-  },
-  submitButtonDisabled: {
-    opacity: 0.6,
-  },
-  submitLabel: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+  submitWrap: {
+    marginTop: 12,
   },
 });
