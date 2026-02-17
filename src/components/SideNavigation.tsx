@@ -4,16 +4,10 @@ import { Feather } from '@expo/vector-icons';
 
 import { colors, radius, shadows } from '../theme/tokens';
 import { typography } from '../theme/typography';
+import { DESKTOP_TABS, type NavigationTab } from '../navigation/tabs';
 
-export type NavigationTab = 'dashboard' | 'ventes' | 'stocks' | 'clients' | 'parametres';
-
-const DESKTOP_TABS: Array<{ id: NavigationTab; label: string; icon: ComponentProps<typeof Feather>['name'] }> = [
-  { id: 'dashboard', label: 'Dashboard', icon: 'home' },
-  { id: 'ventes', label: 'Ventes', icon: 'shopping-cart' },
-  { id: 'stocks', label: 'Stocks', icon: 'package' },
-  { id: 'clients', label: 'Clients', icon: 'users' },
-  { id: 'parametres', label: 'Parametres', icon: 'settings' },
-];
+const DESKTOP_ITEMS: Array<{ id: NavigationTab; label: string; icon: ComponentProps<typeof Feather>['name'] }> =
+  DESKTOP_TABS.map((item) => ({ id: item.id, label: item.label, icon: item.icon }));
 
 interface SideNavigationProps {
   activeTab: NavigationTab;
@@ -29,7 +23,7 @@ export function SideNavigation({ activeTab, onTabChange, onLogout }: SideNavigat
       </View>
 
       <View style={styles.nav}>
-        {DESKTOP_TABS.map((tab) => {
+        {DESKTOP_ITEMS.map((tab) => {
           const isActive = activeTab === tab.id;
           return (
             <Pressable

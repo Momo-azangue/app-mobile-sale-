@@ -2,29 +2,28 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
-import { createClient, deleteClient, listClients } from '../api/services';
+import { createProvider, deleteProvider, listProviders } from '../api/services';
 import { getErrorMessage } from '../api/errors';
-import type { ClientResponseDTO } from '../types/api';
+import type { ProviderResponseDTO } from '../types/api';
 import { colors } from '../theme/tokens';
 import { typography } from '../theme/typography';
+import { AppButton } from '../components/common/AppButton';
+import { AppCard } from '../components/common/AppCard';
 import { EmptyState } from '../components/common/EmptyState';
 import { ErrorState } from '../components/common/ErrorState';
 import { FloatingActionButton } from '../components/common/FloatingActionButton';
 import { FormModal } from '../components/common/FormModal';
-import { LoadingState } from '../components/common/LoadingState';
-import { SearchField } from '../components/common/SearchField';
-import { ScreenHeader } from '../components/common/ScreenHeader';
-import { AppButton } from '../components/common/AppButton';
-import { AppCard } from '../components/common/AppCard';
 import { InputField } from '../components/common/InputField';
+import { LoadingState } from '../components/common/LoadingState';
+import { ScreenHeader } from '../components/common/ScreenHeader';
+import { SearchField } from '../components/common/SearchField';
 
-interface ClientsScreenProps {
+interface FournisseursScreenProps {
   refreshSignal: number;
-  onClientChanged: () => void;
 }
 
-export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenProps) {
-  const [clients, setClients] = useState<ClientResponseDTO[]>([]);
+export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
+  const [providers, setProviders] = useState<ProviderResponseDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,13 +33,14 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
 
-  const loadClients = useCallback(async () => {
+  const loadProviders = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const fetched = await listClients();
-      setClients(fetched);
+      const fetched = await listProviders();
+      setProviders(fetched);
     } catch (loadError) {
       setError(getErrorMessage(loadError));
     } finally {
@@ -49,21 +49,22 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
   }, []);
 
   useEffect(() => {
-    void loadClients();
-  }, [loadClients, refreshSignal]);
+    void loadProviders();
+  }, [loadProviders, refreshSignal]);
 
-  const filteredClients = useMemo(() => {
+  const filteredProviders = useMemo(() => {
     const lower = searchTerm.toLowerCase();
-    return clients.filter((client) => {
-      const blob = `${client.name} ${client.email ?? ''} ${client.phone ?? ''}`.toLowerCase();
+    return providers.filter((provider) => {
+      const blob = `${provider.name} ${provider.email ?? ''} ${provider.phone ?? ''} ${provider.address ?? ''}`.toLowerCase();
       return blob.includes(lower);
     });
-  }, [clients, searchTerm]);
+  }, [providers, searchTerm]);
 
   const resetForm = () => {
     setName('');
     setEmail('');
     setPhone('');
+    setAddress('');
   };
 
   const closeCreateModal = () => {
@@ -71,7 +72,7 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
     resetForm();
   };
 
-  const handleCreateClient = async () => {
+  const handleCreateProvider = async () => {
     if (!name.trim()) {
       Alert.alert('Validation', 'Le nom est obligatoire.');
       return;
@@ -79,16 +80,15 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
 
     setSaving(true);
     try {
-      await createClient({
+      await createProvider({
         name: name.trim(),
         email: email.trim() || undefined,
         phone: phone.trim() || undefined,
+        address: address.trim() || undefined,
       });
 
       closeCreateModal();
-
-      await loadClients();
-      onClientChanged();
+      await loadProviders();
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {
@@ -96,17 +96,16 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
     }
   };
 
-  const handleDeleteClient = (client: ClientResponseDTO) => {
-    Alert.alert('Supprimer client', `Supprimer ${client.name} ?`, [
+  const handleDeleteProvider = (provider: ProviderResponseDTO) => {
+    Alert.alert('Supprimer fournisseur', `Supprimer ${provider.name} ?`, [
       { text: 'Annuler', style: 'cancel' },
       {
         text: 'Supprimer',
         style: 'destructive',
         onPress: async () => {
           try {
-            await deleteClient(client.id);
-            await loadClients();
-            onClientChanged();
+            await deleteProvider(provider.id);
+            await loadProviders();
           } catch (deleteError) {
             Alert.alert('Erreur', getErrorMessage(deleteError));
           }
@@ -116,39 +115,46 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
   };
 
   if (loading) {
-    return <LoadingState message='Chargement clients...' />;
+    return <LoadingState message='Chargement fournisseurs...' />;
   }
 
   if (error) {
-    return <ErrorState title='Erreur clients' message={error} onRetry={() => void loadClients()} />;
+    return <ErrorState title='Erreur fournisseurs' message={error} onRetry={() => void loadProviders()} />;
   }
 
   return (
     <View style={styles.wrapper}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <ScreenHeader title='Clients' subtitle='Gestion de la base clients' />
+        <ScreenHeader title='Fournisseurs' subtitle='Suivi des fournisseurs et coordonnees' />
 
         <SearchField
           value={searchTerm}
           onChangeText={setSearchTerm}
-          placeholder='Rechercher un client...'
+          placeholder='Rechercher un fournisseur...'
         />
 
-        {filteredClients.length === 0 ? (
-          <EmptyState icon='users' title='Aucun client' description='Ajoutez votre premier client pour demarrer les ventes.' />
+        {filteredProviders.length === 0 ? (
+          <EmptyState
+            icon='truck'
+            title='Aucun fournisseur'
+            description='Ajoutez un fournisseur pour preparer vos approvisionnements.'
+            actionLabel='Ajouter'
+            onAction={() => setShowCreateForm(true)}
+          />
         ) : (
           <View style={styles.list}>
-            {filteredClients.map((client) => (
-              <AppCard key={client.id} style={styles.clientCard}>
-                <View style={styles.clientHeader}>
-                  <Text style={styles.clientName}>{client.name}</Text>
-                  <Pressable onPress={() => handleDeleteClient(client)}>
+            {filteredProviders.map((provider) => (
+              <AppCard key={provider.id} style={styles.providerCard}>
+                <View style={styles.providerHeader}>
+                  <Text style={styles.providerName}>{provider.name}</Text>
+                  <Pressable onPress={() => handleDeleteProvider(provider)}>
                     <Feather name='trash-2' size={18} color={colors.danger600} />
                   </Pressable>
                 </View>
 
-                <Text style={styles.clientMeta}>{client.email || '-'}</Text>
-                <Text style={styles.clientMeta}>{client.phone || '-'}</Text>
+                <Text style={styles.providerMeta}>{provider.email || '-'}</Text>
+                <Text style={styles.providerMeta}>{provider.phone || '-'}</Text>
+                <Text style={styles.providerMeta}>{provider.address || '-'}</Text>
               </AppCard>
             ))}
           </View>
@@ -156,34 +162,40 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
       </ScrollView>
 
       <FloatingActionButton
-        accessibilityLabel='Ajouter un client'
+        accessibilityLabel='Ajouter un fournisseur'
         onPress={() => setShowCreateForm(true)}
       />
 
       <FormModal
         visible={showCreateForm}
-        title='Nouveau client'
+        title='Nouveau fournisseur'
         onClose={closeCreateModal}
       >
         <InputField
           label='Nom'
           value={name}
           onChangeText={setName}
-          placeholder='Nom'
+          placeholder='Nom du fournisseur'
         />
         <InputField
           label='Email (optionnel)'
           value={email}
           onChangeText={setEmail}
-          placeholder='Email (optionnel)'
-          keyboardType='email-address'
+          placeholder='contact@fournisseur.com'
           autoCapitalize='none'
+          keyboardType='email-address'
         />
         <InputField
           label='Telephone (optionnel)'
           value={phone}
           onChangeText={setPhone}
-          placeholder='Telephone ex: +22501234567'
+          placeholder='+225000000000'
+        />
+        <InputField
+          label='Adresse (optionnel)'
+          value={address}
+          onChangeText={setAddress}
+          placeholder='Adresse'
         />
 
         <View style={styles.actionRow}>
@@ -197,9 +209,9 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
           </View>
           <View style={styles.actionItem}>
             <AppButton
-              label={saving ? 'Creation...' : 'Ajouter'}
+              label={saving ? 'Ajout...' : 'Ajouter'}
               onPress={() => {
-                void handleCreateClient();
+                void handleCreateProvider();
               }}
               disabled={saving}
             />
@@ -220,28 +232,28 @@ const styles = StyleSheet.create({
     backgroundColor: colors.neutral50,
   },
   content: {
-    paddingBottom: 120,
     paddingHorizontal: 16,
     paddingTop: 24,
+    paddingBottom: 120,
   },
   list: {
     marginTop: 16,
     gap: 12,
   },
-  clientCard: {
-    padding: 14,
+  providerCard: {
+    gap: 6,
   },
-  clientHeader: {
+  providerHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
   },
-  clientName: {
+  providerName: {
     ...typography.bodyMedium,
     color: colors.neutral900,
   },
-  clientMeta: {
-    marginTop: 6,
+  providerMeta: {
     ...typography.label,
     color: colors.neutral500,
   },

@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
 
 import { colors, radius } from '../../theme/tokens';
 import { typography } from '../../theme/typography';
@@ -9,6 +9,7 @@ interface AppButtonProps {
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  loading?: boolean;
   variant?: AppButtonVariant;
 }
 
@@ -16,6 +17,7 @@ export function AppButton({
   label,
   onPress,
   disabled = false,
+  loading = false,
   variant = 'primary',
 }: AppButtonProps) {
   const currentButtonStyle =
@@ -36,18 +38,27 @@ export function AppButton({
           ? styles.dangerText
           : styles.primaryText;
 
+  const spinnerColor =
+    variant === 'outline' || variant === 'ghost'
+      ? colors.primary600
+      : colors.white;
+
   return (
     <Pressable
       style={({ pressed }) => [
         styles.baseButton,
         currentButtonStyle,
-        disabled && styles.disabled,
-        pressed && !disabled && styles.pressed,
+        (disabled || loading) && styles.disabled,
+        pressed && !(disabled || loading) && styles.pressed,
       ]}
       onPress={onPress}
-      disabled={disabled}
+      disabled={disabled || loading}
     >
-      <Text style={[styles.baseText, currentTextStyle]}>{label}</Text>
+      {loading ? (
+        <ActivityIndicator size='small' color={spinnerColor} />
+      ) : (
+        <Text style={[styles.baseText, currentTextStyle]}>{label}</Text>
+      )}
     </Pressable>
   );
 }

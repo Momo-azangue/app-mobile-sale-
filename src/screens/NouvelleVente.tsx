@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { createSale, listClients, listProducts } from '../api/services';
 import { getErrorMessage } from '../api/errors';
@@ -11,6 +11,9 @@ import { ErrorState } from '../components/common/ErrorState';
 import { EmptyState } from '../components/common/EmptyState';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { AppButton } from '../components/common/AppButton';
+import { AppCard } from '../components/common/AppCard';
+import { ChipGroup, type ChipOption } from '../components/common/ChipGroup';
+import { InputField } from '../components/common/InputField';
 
 interface NouvelleVenteProps {
   onBack: () => void;
@@ -73,6 +76,18 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   }, [loadReferences, refreshSignal]);
 
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
+  const clientOptions = useMemo<ChipOption[]>(
+    () => clients.map((client) => ({ label: client.name, value: client.id })),
+    [clients],
+  );
+  const statusOptions = useMemo<ChipOption[]>(
+    () => STATUS_OPTIONS.map((option) => ({ label: option.label, value: option.value })),
+    [],
+  );
+  const productOptions = useMemo<ChipOption[]>(
+    () => products.map((product) => ({ label: product.name, value: product.id })),
+    [products],
+  );
 
   const updateLine = (lineId: string, patch: Partial<SaleLineForm>) => {
     setLines((previous) => previous.map((line) => (line.id === lineId ? { ...line, ...patch } : line)));
@@ -196,44 +211,24 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
 
       <View style={styles.formGroup}>
         <Text style={styles.label}>Client</Text>
-        <View style={styles.chipsWrap}>
-          {clients.map((client) => {
-            const active = client.id === clientId;
-            return (
-              <Pressable
-                key={client.id}
-                style={[styles.chip, active && styles.chipActive]}
-                onPress={() => setClientId(client.id)}
-              >
-                <Text style={[styles.chipText, active && styles.chipTextActive]}>{client.name}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <ChipGroup options={clientOptions} value={clientId} onChange={setClientId} layout='wrap' tone='soft' />
       </View>
 
       <View style={styles.formGroup}>
         <Text style={styles.label}>Statut facture</Text>
-        <View style={styles.statusRow}>
-          {STATUS_OPTIONS.map((option) => {
-            const isActive = status === option.value;
-            return (
-              <Pressable
-                key={option.value}
-                onPress={() => setStatus(option.value)}
-                style={[styles.statusChip, isActive && styles.statusChipActive]}
-              >
-                <Text style={[styles.statusLabel, isActive && styles.statusLabelActive]}>{option.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <ChipGroup
+          options={statusOptions}
+          value={status}
+          onChange={(value) => setStatus(value as InvoiceStatus)}
+          layout='wrap'
+          tone='solid'
+        />
       </View>
 
       {lines.map((line, index) => {
         const selectedProduct = productById.get(line.productId);
         return (
-          <View key={line.id} style={styles.lineCard}>
+          <AppCard key={line.id} style={styles.lineCard}>
             <View style={styles.lineHeader}>
               <Text style={styles.lineTitle}>Ligne {index + 1}</Text>
               <Pressable onPress={() => removeLine(line.id)} disabled={lines.length === 1}>
@@ -242,49 +237,36 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
             </View>
 
             <Text style={styles.label}>Produit</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.productChips}>
-              {products.map((product) => {
-                const active = product.id === line.productId;
-                return (
-                  <Pressable
-                    key={`${line.id}-${product.id}`}
-                    style={[styles.chip, active && styles.chipActive]}
-                    onPress={() => updateLine(line.id, { productId: product.id })}
-                  >
-                    <Text style={[styles.chipText, active && styles.chipTextActive]}>{product.name}</Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
+            <ChipGroup
+              options={productOptions}
+              value={line.productId}
+              onChange={(value) => updateLine(line.id, { productId: value })}
+              layout='row-scroll'
+              tone='soft'
+            />
 
             <Text style={styles.selectedProductText}>Selection: {selectedProduct?.name ?? '-'}</Text>
 
             <View style={styles.row}>
-              <View style={[styles.formGroup, styles.flexHalf]}>
-                <Text style={styles.label}>Quantite</Text>
-                <TextInput
-                  style={styles.input}
-                  value={line.quantity}
-                  onChangeText={(value) => updateLine(line.id, { quantity: value })}
-                  keyboardType='numeric'
-                  placeholder='1'
-                  placeholderTextColor={colors.neutral400}
-                />
-              </View>
+              <InputField
+                label='Quantite'
+                value={line.quantity}
+                onChangeText={(value) => updateLine(line.id, { quantity: value })}
+                keyboardType='numeric'
+                placeholder='1'
+                containerStyle={styles.flexHalf}
+              />
 
-              <View style={[styles.formGroup, styles.flexHalf]}>
-                <Text style={styles.label}>Prix vente</Text>
-                <TextInput
-                  style={styles.input}
-                  value={line.priceAtSale}
-                  onChangeText={(value) => updateLine(line.id, { priceAtSale: value })}
-                  keyboardType='decimal-pad'
-                  placeholder='100'
-                  placeholderTextColor={colors.neutral400}
-                />
-              </View>
+              <InputField
+                label='Prix vente'
+                value={line.priceAtSale}
+                onChangeText={(value) => updateLine(line.id, { priceAtSale: value })}
+                keyboardType='decimal-pad'
+                placeholder='100'
+                containerStyle={styles.flexHalf}
+              />
             </View>
-          </View>
+          </AppCard>
         );
       })}
 
@@ -342,66 +324,9 @@ const styles = StyleSheet.create({
     color: colors.neutral700,
     marginBottom: 8,
   },
-  chipsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  chip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.neutral300,
-    backgroundColor: colors.white,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  chipActive: {
-    borderColor: colors.primary600,
-    backgroundColor: colors.primary50,
-  },
-  chipText: {
-    ...typography.label,
-    color: colors.neutral600,
-  },
-  chipTextActive: {
-    color: colors.primary600,
-    fontFamily: typography.label.fontFamily,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 4,
-    gap: 8,
-  },
-  statusChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.neutral300,
-    backgroundColor: colors.white,
-  },
-  statusChipActive: {
-    backgroundColor: colors.primary600,
-    borderColor: colors.primary600,
-  },
-  statusLabel: {
-    ...typography.label,
-    color: colors.neutral600,
-  },
-  statusLabelActive: {
-    color: colors.white,
-  },
   lineCard: {
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.neutral200,
     padding: 14,
     marginBottom: 14,
-    ...shadows.sm,
   },
   lineHeader: {
     flexDirection: 'row',
@@ -420,9 +345,6 @@ const styles = StyleSheet.create({
   removeDisabled: {
     opacity: 0.5,
   },
-  productChips: {
-    paddingBottom: 4,
-  },
   selectedProductText: {
     marginTop: 8,
     marginBottom: 8,
@@ -436,16 +358,6 @@ const styles = StyleSheet.create({
   },
   flexHalf: {
     flex: 1,
-  },
-  input: {
-    ...typography.body,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.neutral300,
-    backgroundColor: colors.white,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    color: colors.neutral900,
   },
   submitWrap: {
     marginTop: 12,

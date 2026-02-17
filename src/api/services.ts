@@ -1,11 +1,16 @@
 import { api, publicApi } from './http';
 import type {
   AuthResponseDTO,
+  CategoryRequestDTO,
+  CategoryResponseDTO,
   ClientRequestDTO,
   ClientResponseDTO,
   CommerceSettingsRequestDTO,
   CommerceSettingsResponseDTO,
+  InviteUserRequestDTO,
   InvoiceResponseDTO,
+  ProviderRequestDTO,
+  ProviderResponseDTO,
   ProductResponseDTO,
   RegisterRequestDTO,
   SaleRequestDTO,
@@ -52,6 +57,48 @@ export async function createClient(payload: ClientRequestDTO): Promise<ClientRes
 
 export async function deleteClient(clientId: string): Promise<void> {
   await api.delete(`/api/v1/clients/${clientId}`);
+}
+
+export async function listProviders(): Promise<ProviderResponseDTO[]> {
+  const { data } = await api.get<ProviderResponseDTO[]>('/api/v1/providers');
+  return data;
+}
+
+export async function createProvider(payload: ProviderRequestDTO): Promise<void> {
+  await api.post('/api/v1/providers', payload);
+}
+
+export async function deleteProvider(providerId: string): Promise<void> {
+  await api.delete(`/api/v1/providers/${providerId}`);
+}
+
+export async function listCategories(): Promise<CategoryResponseDTO[]> {
+  const { data } = await api.get<CategoryResponseDTO[]>('/api/v1/categories');
+  return data;
+}
+
+export async function createCategory(payload: CategoryRequestDTO): Promise<CategoryResponseDTO> {
+  const { data } = await api.post<CategoryResponseDTO>('/api/v1/categories', payload);
+  return data;
+}
+
+export async function deleteCategory(categoryId: string): Promise<void> {
+  await api.delete(`/api/v1/categories/${categoryId}`);
+}
+
+export async function inviteUserToTenant(
+  tenantId: string,
+  payload: InviteUserRequestDTO
+): Promise<void> {
+  await api.post('/api/v1/invitations/invite', payload, {
+    params: { tenantId },
+  });
+}
+
+export async function acceptInvitation(token: string, password: string): Promise<void> {
+  await publicApi.post('/api/v1/invitations/accept', null, {
+    params: { token, password },
+  });
 }
 
 export async function listProducts(): Promise<ProductResponseDTO[]> {

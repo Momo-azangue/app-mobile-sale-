@@ -2,17 +2,12 @@ import { ComponentProps } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
-import type { NavigationTab } from './SideNavigation';
 import { colors, radius } from '../theme/tokens';
 import { typography } from '../theme/typography';
+import { MOBILE_PRIMARY_TABS, type NavigationTab } from '../navigation/tabs';
 
-const TABS: Array<{ id: NavigationTab; label: string; icon: ComponentProps<typeof Feather>['name'] }> = [
-  { id: 'dashboard', label: 'Tableau', icon: 'home' },
-  { id: 'ventes', label: 'Ventes', icon: 'shopping-cart' },
-  { id: 'stocks', label: 'Stocks', icon: 'package' },
-  { id: 'clients', label: 'Clients', icon: 'users' },
-  { id: 'parametres', label: 'Reglages', icon: 'settings' },
-];
+const PRIMARY_ITEMS: Array<{ id: NavigationTab; label: string; icon: ComponentProps<typeof Feather>['name'] }> =
+  MOBILE_PRIMARY_TABS.map((tab) => ({ id: tab.id, label: tab.label, icon: tab.icon }));
 
 interface BottomNavigationProps {
   activeTab: NavigationTab;
@@ -22,7 +17,7 @@ interface BottomNavigationProps {
 export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationProps) {
   return (
     <View style={styles.container}>
-      {TABS.map((tab) => {
+      {PRIMARY_ITEMS.map((tab) => {
         const isActive = tab.id === activeTab;
         return (
           <Pressable

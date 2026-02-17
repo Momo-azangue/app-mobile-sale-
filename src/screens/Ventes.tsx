@@ -14,6 +14,7 @@ import { EmptyState } from '../components/common/EmptyState';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
+import { ChipGroup, type ChipOption } from '../components/common/ChipGroup';
 
 interface VentesScreenProps {
   onCreateNew: () => void;
@@ -92,6 +93,16 @@ export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) 
     });
   }, [salesCards, searchTerm, filter]);
 
+  const filterOptions = useMemo<ChipOption[]>(
+    () => [
+      { label: 'Toutes', value: 'all' },
+      { label: 'Payees', value: 'PAYE' },
+      { label: 'Impayees', value: 'IMPAYE' },
+      { label: 'Partielles', value: 'PARTIEL' },
+    ],
+    [],
+  );
+
   if (loading) {
     return <LoadingState message='Chargement ventes...' />;
   }
@@ -112,25 +123,14 @@ export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) 
           style={styles.searchBox}
         />
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
-          {[
-            { key: 'all' as const, label: 'Toutes' },
-            { key: 'PAYE' as const, label: 'Payees' },
-            { key: 'IMPAYE' as const, label: 'Impayees' },
-            { key: 'PARTIEL' as const, label: 'Partielles' },
-          ].map((item) => {
-            const isActive = filter === item.key;
-            return (
-              <Pressable
-                key={item.key}
-                onPress={() => setFilter(item.key)}
-                style={[styles.filterChip, isActive && styles.filterChipActive]}
-              >
-                <Text style={[styles.filterLabel, isActive && styles.filterLabelActive]}>{item.label}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+        <ChipGroup
+          options={filterOptions}
+          value={filter}
+          onChange={(value) => setFilter(value as 'all' | InvoiceStatus)}
+          layout='row-scroll'
+          tone='soft'
+          style={styles.filters}
+        />
 
         {filteredSales.length === 0 ? (
           <EmptyState
@@ -192,28 +192,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   filters: {
-    paddingVertical: 4,
     paddingHorizontal: 2,
-  },
-  filterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 9,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.neutral300,
-    backgroundColor: colors.white,
-    marginRight: 12,
-  },
-  filterChipActive: {
-    backgroundColor: colors.primary50,
-    borderColor: colors.primary200,
-  },
-  filterLabel: {
-    ...typography.label,
-    color: colors.neutral600,
-  },
-  filterLabelActive: {
-    color: colors.primary600,
+    paddingTop: 4,
   },
   list: {
     marginTop: 16,

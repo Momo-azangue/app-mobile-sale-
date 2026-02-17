@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { SafeAreaView, StatusBar, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { StatusBar, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import {
   Inter_400Regular,
@@ -8,9 +8,12 @@ import {
   Inter_700Bold,
   useFonts,
 } from '@expo-google-fonts/inter';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { BottomNavigation } from './src/components/BottomNavigation';
-import { SideNavigation, type NavigationTab } from './src/components/SideNavigation';
+import { SideNavigation } from './src/components/SideNavigation';
+import { MoreDrawer } from './src/components/MoreDrawer';
+import { MobileTopBar } from './src/components/MobileTopBar';
 import { LoadingState } from './src/components/common/LoadingState';
 import { DashboardScreen } from './src/screens/Dashboard';
 import { VentesScreen } from './src/screens/Ventes';
@@ -18,9 +21,14 @@ import { StocksScreen } from './src/screens/Stocks';
 import { ClientsScreen } from './src/screens/Clients';
 import { ParametresScreen } from './src/screens/Parametres';
 import { NouvelleVenteScreen } from './src/screens/NouvelleVente';
+import { FournisseursScreen } from './src/screens/Fournisseurs';
+import { CategoriesScreen } from './src/screens/Categories';
+import { FacturesScreen } from './src/screens/Factures';
+import { InvitationsScreen } from './src/screens/Invitations';
 import { LoginScreen } from './src/screens/auth/Login';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { colors } from './src/theme/tokens';
+import { type NavigationTab } from './src/navigation/tabs';
 
 function AppShell() {
   const { session, isBooting, logout } = useAuth();
@@ -28,6 +36,7 @@ function AppShell() {
 
   const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
   const [showNewSale, setShowNewSale] = useState(false);
+  const [showMoreDrawer, setShowMoreDrawer] = useState(false);
   const [refreshSignal, setRefreshSignal] = useState(0);
 
   const bumpRefresh = () => setRefreshSignal((value) => value + 1);
@@ -59,6 +68,14 @@ function AppShell() {
         return <StocksScreen refreshSignal={refreshSignal} />;
       case 'clients':
         return <ClientsScreen refreshSignal={refreshSignal} onClientChanged={bumpRefresh} />;
+      case 'fournisseurs':
+        return <FournisseursScreen refreshSignal={refreshSignal} />;
+      case 'categories':
+        return <CategoriesScreen refreshSignal={refreshSignal} />;
+      case 'factures':
+        return <FacturesScreen refreshSignal={refreshSignal} />;
+      case 'invitations':
+        return <InvitationsScreen refreshSignal={refreshSignal} />;
       case 'parametres':
         return (
           <ParametresScreen
@@ -84,7 +101,7 @@ function AppShell() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle='dark-content' />
+      <StatusBar barStyle='dark-content' translucent={false} />
       <ExpoStatusBar style='dark' />
 
       {isDesktopLayout ? (
@@ -94,12 +111,40 @@ function AppShell() {
         </View>
       ) : (
         <>
+          {session && !showNewSale ? (
+            <MobileTopBar
+              activeTab={activeTab}
+              onOpenDrawer={() => {
+                setShowMoreDrawer(true);
+              }}
+            />
+          ) : null}
           <View style={styles.container}>{content}</View>
           {session && !showNewSale && (
             <View style={styles.bottomBar}>
-              <BottomNavigation activeTab={activeTab} onTabChange={setActiveTab} />
+              <BottomNavigation
+                activeTab={activeTab}
+                onTabChange={(tab) => {
+                  setShowMoreDrawer(false);
+                  setActiveTab(tab);
+                }}
+              />
             </View>
           )}
+          {session && !showNewSale ? (
+            <MoreDrawer
+              visible={showMoreDrawer}
+              activeTab={activeTab}
+              onClose={() => setShowMoreDrawer(false)}
+              onSelectTab={(tab) => {
+                setActiveTab(tab);
+              }}
+              onLogout={() => {
+                setShowMoreDrawer(false);
+                void logout();
+              }}
+            />
+          ) : null}
         </>
       )}
     </SafeAreaView>
@@ -114,18 +159,18 @@ export default function App() {
     Inter_700Bold,
   });
 
-  if (!fontsLoaded && !fontError) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <LoadingState message='Chargement de l interface...' />
-      </SafeAreaView>
-    );
-  }
-
   return (
-    <AuthProvider>
-      <AppShell />
-    </AuthProvider>
+    <SafeAreaProvider>
+      {!fontsLoaded && !fontError ? (
+        <SafeAreaView style={styles.safeArea}>
+          <LoadingState message='Chargement de l interface...' />
+        </SafeAreaView>
+      ) : (
+        <AuthProvider>
+          <AppShell />
+        </AuthProvider>
+      )}
+    </SafeAreaProvider>
   );
 }
 

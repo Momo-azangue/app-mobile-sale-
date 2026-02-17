@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { createCommerceSettings, listCommerceSettings } from '../api/services';
 import { getErrorMessage } from '../api/errors';
-import { colors, radius, shadows } from '../theme/tokens';
+import { colors } from '../theme/tokens';
 import { typography } from '../theme/typography';
 import { LoadingState } from '../components/common/LoadingState';
 import { ErrorState } from '../components/common/ErrorState';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { AppButton } from '../components/common/AppButton';
+import { AppCard } from '../components/common/AppCard';
+import { InputField } from '../components/common/InputField';
 
 interface ParametresScreenProps {
   refreshSignal: number;
@@ -105,27 +107,26 @@ export function ParametresScreen({
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <ScreenHeader title='Parametres' subtitle='Configuration boutique et session' />
 
-      <View style={styles.card}>
+      <AppCard style={styles.card}>
         <View style={styles.sectionHeader}>
           <Feather name='shopping-bag' size={18} color={colors.primary600} />
           <Text style={styles.sectionTitle}>Boutique</Text>
         </View>
 
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Nom de la boutique</Text>
-          <TextInput value={storeName} onChangeText={setStoreName} style={styles.input} />
-        </View>
+        <InputField
+          label='Nom de la boutique'
+          value={storeName}
+          onChangeText={setStoreName}
+          autoCapitalize='words'
+        />
 
-        <View style={styles.formGroup}>
-          <Text style={styles.label}>Devise</Text>
-          <TextInput
-            value={currency}
-            onChangeText={setCurrency}
-            style={styles.input}
-            autoCapitalize='characters'
-            maxLength={3}
-          />
-        </View>
+        <InputField
+          label='Devise'
+          value={currency}
+          onChangeText={setCurrency}
+          autoCapitalize='characters'
+          maxLength={3}
+        />
 
         <Text style={styles.note}>
           Champs non supportes par l API actuelle masques pour le MVP: adresse, email boutique, notifications.
@@ -138,16 +139,16 @@ export function ParametresScreen({
           }}
           disabled={saving}
         />
-      </View>
+      </AppCard>
 
-      <View style={styles.card}>
+      <AppCard style={styles.card}>
         <View style={styles.sectionHeader}>
           <Feather name='shield' size={18} color={colors.primary600} />
           <Text style={styles.sectionTitle}>Session</Text>
         </View>
 
         <AppButton label='Deconnexion' variant='danger' onPress={handleLogout} />
-      </View>
+      </AppCard>
     </ScrollView>
   );
 }
@@ -164,13 +165,7 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   card: {
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.neutral200,
-    padding: 16,
     gap: 14,
-    ...shadows.sm,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -179,23 +174,6 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     ...typography.bodyMedium,
-    color: colors.neutral900,
-  },
-  formGroup: {
-    gap: 8,
-  },
-  label: {
-    ...typography.label,
-    color: colors.neutral600,
-  },
-  input: {
-    ...typography.body,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.neutral300,
-    backgroundColor: colors.white,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
     color: colors.neutral900,
   },
   note: {

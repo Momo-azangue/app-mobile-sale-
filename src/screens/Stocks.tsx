@@ -1,5 +1,5 @@
 import { ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { listProducts, listStockMovements } from '../api/services';
@@ -13,6 +13,7 @@ import { ErrorState } from '../components/common/ErrorState';
 import { EmptyState } from '../components/common/EmptyState';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
+import { SegmentedControl } from '../components/common/SegmentedControl';
 
 interface StocksScreenProps {
   refreshSignal: number;
@@ -139,20 +140,14 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <ScreenHeader title='Gestion de stock' subtitle='Suivi produits et mouvements' />
 
-      <View style={styles.tabs}>
-        <Pressable
-          style={[styles.tabButton, activeTab === 'produits' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('produits')}
-        >
-          <Text style={[styles.tabLabel, activeTab === 'produits' && styles.tabLabelActive]}>Produits</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.tabButton, activeTab === 'mouvements' && styles.tabButtonActive]}
-          onPress={() => setActiveTab('mouvements')}
-        >
-          <Text style={[styles.tabLabel, activeTab === 'mouvements' && styles.tabLabelActive]}>Mouvements</Text>
-        </Pressable>
-      </View>
+      <SegmentedControl
+        options={[
+          { label: 'Produits', value: 'produits' },
+          { label: 'Mouvements', value: 'mouvements' },
+        ]}
+        value={activeTab}
+        onChange={(value) => setActiveTab(value as 'produits' | 'mouvements')}
+      />
 
       {activeTab === 'produits' ? (
         <>
@@ -250,30 +245,6 @@ const styles = StyleSheet.create({
     paddingBottom: 96,
     paddingHorizontal: 16,
     paddingTop: 24,
-  },
-  tabs: {
-    flexDirection: 'row',
-    backgroundColor: colors.neutral100,
-    borderRadius: radius.pill,
-    padding: 4,
-    marginBottom: 16,
-  },
-  tabButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: radius.pill,
-    alignItems: 'center',
-  },
-  tabButtonActive: {
-    backgroundColor: colors.white,
-    ...shadows.sm,
-  },
-  tabLabel: {
-    ...typography.label,
-    color: colors.neutral600,
-  },
-  tabLabelActive: {
-    color: colors.primary600,
   },
   searchBox: {
     marginBottom: 16,

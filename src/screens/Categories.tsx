@@ -2,29 +2,28 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
-import { createClient, deleteClient, listClients } from '../api/services';
+import { createCategory, deleteCategory, listCategories } from '../api/services';
 import { getErrorMessage } from '../api/errors';
-import type { ClientResponseDTO } from '../types/api';
+import type { CategoryResponseDTO } from '../types/api';
 import { colors } from '../theme/tokens';
 import { typography } from '../theme/typography';
+import { AppButton } from '../components/common/AppButton';
+import { AppCard } from '../components/common/AppCard';
 import { EmptyState } from '../components/common/EmptyState';
 import { ErrorState } from '../components/common/ErrorState';
 import { FloatingActionButton } from '../components/common/FloatingActionButton';
 import { FormModal } from '../components/common/FormModal';
-import { LoadingState } from '../components/common/LoadingState';
-import { SearchField } from '../components/common/SearchField';
-import { ScreenHeader } from '../components/common/ScreenHeader';
-import { AppButton } from '../components/common/AppButton';
-import { AppCard } from '../components/common/AppCard';
 import { InputField } from '../components/common/InputField';
+import { LoadingState } from '../components/common/LoadingState';
+import { ScreenHeader } from '../components/common/ScreenHeader';
+import { SearchField } from '../components/common/SearchField';
 
-interface ClientsScreenProps {
+interface CategoriesScreenProps {
   refreshSignal: number;
-  onClientChanged: () => void;
 }
 
-export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenProps) {
-  const [clients, setClients] = useState<ClientResponseDTO[]>([]);
+export function CategoriesScreen({ refreshSignal }: CategoriesScreenProps) {
+  const [categories, setCategories] = useState<CategoryResponseDTO[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,15 +31,14 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  const [description, setDescription] = useState('');
 
-  const loadClients = useCallback(async () => {
+  const loadCategories = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const fetched = await listClients();
-      setClients(fetched);
+      const fetched = await listCategories();
+      setCategories(fetched);
     } catch (loadError) {
       setError(getErrorMessage(loadError));
     } finally {
@@ -49,21 +47,20 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
   }, []);
 
   useEffect(() => {
-    void loadClients();
-  }, [loadClients, refreshSignal]);
+    void loadCategories();
+  }, [loadCategories, refreshSignal]);
 
-  const filteredClients = useMemo(() => {
+  const filteredCategories = useMemo(() => {
     const lower = searchTerm.toLowerCase();
-    return clients.filter((client) => {
-      const blob = `${client.name} ${client.email ?? ''} ${client.phone ?? ''}`.toLowerCase();
+    return categories.filter((category) => {
+      const blob = `${category.nom} ${category.description ?? ''}`.toLowerCase();
       return blob.includes(lower);
     });
-  }, [clients, searchTerm]);
+  }, [categories, searchTerm]);
 
   const resetForm = () => {
     setName('');
-    setEmail('');
-    setPhone('');
+    setDescription('');
   };
 
   const closeCreateModal = () => {
@@ -71,24 +68,21 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
     resetForm();
   };
 
-  const handleCreateClient = async () => {
+  const handleCreateCategory = async () => {
     if (!name.trim()) {
-      Alert.alert('Validation', 'Le nom est obligatoire.');
+      Alert.alert('Validation', 'Le nom de categorie est obligatoire.');
       return;
     }
 
     setSaving(true);
     try {
-      await createClient({
-        name: name.trim(),
-        email: email.trim() || undefined,
-        phone: phone.trim() || undefined,
+      await createCategory({
+        nom: name.trim(),
+        description: description.trim() || undefined,
       });
 
       closeCreateModal();
-
-      await loadClients();
-      onClientChanged();
+      await loadCategories();
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {
@@ -96,17 +90,16 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
     }
   };
 
-  const handleDeleteClient = (client: ClientResponseDTO) => {
-    Alert.alert('Supprimer client', `Supprimer ${client.name} ?`, [
+  const handleDeleteCategory = (category: CategoryResponseDTO) => {
+    Alert.alert('Supprimer categorie', `Supprimer ${category.nom} ?`, [
       { text: 'Annuler', style: 'cancel' },
       {
         text: 'Supprimer',
         style: 'destructive',
         onPress: async () => {
           try {
-            await deleteClient(client.id);
-            await loadClients();
-            onClientChanged();
+            await deleteCategory(category.id);
+            await loadCategories();
           } catch (deleteError) {
             Alert.alert('Erreur', getErrorMessage(deleteError));
           }
@@ -116,39 +109,44 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
   };
 
   if (loading) {
-    return <LoadingState message='Chargement clients...' />;
+    return <LoadingState message='Chargement categories...' />;
   }
 
   if (error) {
-    return <ErrorState title='Erreur clients' message={error} onRetry={() => void loadClients()} />;
+    return <ErrorState title='Erreur categories' message={error} onRetry={() => void loadCategories()} />;
   }
 
   return (
     <View style={styles.wrapper}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <ScreenHeader title='Clients' subtitle='Gestion de la base clients' />
+        <ScreenHeader title='Categories' subtitle='Classification de votre catalogue produit' />
 
         <SearchField
           value={searchTerm}
           onChangeText={setSearchTerm}
-          placeholder='Rechercher un client...'
+          placeholder='Rechercher une categorie...'
         />
 
-        {filteredClients.length === 0 ? (
-          <EmptyState icon='users' title='Aucun client' description='Ajoutez votre premier client pour demarrer les ventes.' />
+        {filteredCategories.length === 0 ? (
+          <EmptyState
+            icon='tag'
+            title='Aucune categorie'
+            description='Ajoutez des categories pour organiser les produits.'
+            actionLabel='Ajouter'
+            onAction={() => setShowCreateForm(true)}
+          />
         ) : (
           <View style={styles.list}>
-            {filteredClients.map((client) => (
-              <AppCard key={client.id} style={styles.clientCard}>
-                <View style={styles.clientHeader}>
-                  <Text style={styles.clientName}>{client.name}</Text>
-                  <Pressable onPress={() => handleDeleteClient(client)}>
+            {filteredCategories.map((category) => (
+              <AppCard key={category.id} style={styles.categoryCard}>
+                <View style={styles.categoryHeader}>
+                  <Text style={styles.categoryName}>{category.nom}</Text>
+                  <Pressable onPress={() => handleDeleteCategory(category)}>
                     <Feather name='trash-2' size={18} color={colors.danger600} />
                   </Pressable>
                 </View>
 
-                <Text style={styles.clientMeta}>{client.email || '-'}</Text>
-                <Text style={styles.clientMeta}>{client.phone || '-'}</Text>
+                <Text style={styles.categoryDescription}>{category.description || 'Sans description'}</Text>
               </AppCard>
             ))}
           </View>
@@ -156,34 +154,27 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
       </ScrollView>
 
       <FloatingActionButton
-        accessibilityLabel='Ajouter un client'
+        accessibilityLabel='Ajouter une categorie'
         onPress={() => setShowCreateForm(true)}
       />
 
       <FormModal
         visible={showCreateForm}
-        title='Nouveau client'
+        title='Nouvelle categorie'
         onClose={closeCreateModal}
       >
         <InputField
           label='Nom'
           value={name}
           onChangeText={setName}
-          placeholder='Nom'
+          placeholder='Nom de la categorie'
         />
         <InputField
-          label='Email (optionnel)'
-          value={email}
-          onChangeText={setEmail}
-          placeholder='Email (optionnel)'
-          keyboardType='email-address'
-          autoCapitalize='none'
-        />
-        <InputField
-          label='Telephone (optionnel)'
-          value={phone}
-          onChangeText={setPhone}
-          placeholder='Telephone ex: +22501234567'
+          label='Description (optionnel)'
+          value={description}
+          onChangeText={setDescription}
+          placeholder='Description'
+          multiline
         />
 
         <View style={styles.actionRow}>
@@ -197,9 +188,9 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
           </View>
           <View style={styles.actionItem}>
             <AppButton
-              label={saving ? 'Creation...' : 'Ajouter'}
+              label={saving ? 'Ajout...' : 'Ajouter'}
               onPress={() => {
-                void handleCreateClient();
+                void handleCreateCategory();
               }}
               disabled={saving}
             />
@@ -220,30 +211,29 @@ const styles = StyleSheet.create({
     backgroundColor: colors.neutral50,
   },
   content: {
-    paddingBottom: 120,
     paddingHorizontal: 16,
     paddingTop: 24,
+    paddingBottom: 120,
   },
   list: {
     marginTop: 16,
     gap: 12,
   },
-  clientCard: {
-    padding: 14,
+  categoryCard: {
+    gap: 8,
   },
-  clientHeader: {
+  categoryHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
-  clientName: {
+  categoryName: {
     ...typography.bodyMedium,
     color: colors.neutral900,
   },
-  clientMeta: {
-    marginTop: 6,
+  categoryDescription: {
     ...typography.label,
-    color: colors.neutral500,
+    color: colors.neutral600,
   },
   actionRow: {
     flexDirection: 'row',

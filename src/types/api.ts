@@ -66,6 +66,41 @@ export interface ClientRequestDTO {
   phone?: string;
 }
 
+export interface ProviderResponseDTO {
+  id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  conditionsPaiement?: string;
+  tenantId?: string;
+}
+
+export interface ProviderRequestDTO {
+  name: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+}
+
+export interface CategoryResponseDTO {
+  id: string;
+  nom: string;
+  description?: string;
+}
+
+export interface CategoryRequestDTO {
+  nom: string;
+  description?: string;
+}
+
+export type InvitationRole = 'ADMIN' | 'EMPLOYE';
+
+export interface InviteUserRequestDTO {
+  email: string;
+  role: InvitationRole;
+}
+
 export interface ProductResponseDTO {
   id: string;
   name: string;

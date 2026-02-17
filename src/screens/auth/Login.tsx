@@ -1,14 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { useAuth } from '../../context/AuthContext';
 import { getErrorMessage } from '../../api/errors';
@@ -17,8 +8,19 @@ import { API_BASE_URL } from '../../config/env';
 import { colors, radius, shadows } from '../../theme/tokens';
 import { typography } from '../../theme/typography';
 import type { RegisterRequestDTO, SubscriptionPlanDTO } from '../../types/api';
+import { AppCard } from '../../components/common/AppCard';
+import type { ChipOption } from '../../components/common/ChipGroup';
+import { SegmentedControl } from '../../components/common/SegmentedControl';
+import { DesktopPromoPanel } from './components/DesktopPromoPanel';
+import { LoginFormSection } from './components/LoginFormSection';
+import { RegisterFormSection } from './components/RegisterFormSection';
 
 type AuthMode = 'login' | 'register';
+
+const AUTH_MODE_OPTIONS = [
+  { label: 'Connexion', value: 'login' },
+  { label: 'Inscription', value: 'register' },
+] as const;
 
 export function LoginScreen() {
   const { loginWithPassword, registerAndLogin, isAuthenticating } = useAuth();
@@ -85,6 +87,11 @@ export function LoginScreen() {
     return plans[0]?.id || 'basic';
   }, [planId, plans]);
 
+  const planOptions = useMemo<ChipOption[]>(
+    () => plans.map((plan) => ({ label: plan.name || plan.id, value: plan.id })),
+    [plans],
+  );
+
   const onLoginSubmit = async () => {
     if (!canLogin) {
       return;
@@ -132,23 +139,9 @@ export function LoginScreen() {
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={[styles.shell, isDesktop && styles.shellDesktop]}>
-          {isDesktop ? (
-            <View style={styles.leftPanel}>
-              <Text style={styles.brand}>Sales App</Text>
-              <Text style={styles.heroTitle}>Pilotez vos ventes et votre stock en temps reel.</Text>
-              <Text style={styles.heroText}>
-                Connectez-vous pour gerer clients, ventes, factures et mouvements de stock depuis le mobile.
-              </Text>
+          {isDesktop ? <DesktopPromoPanel /> : null}
 
-              <View style={styles.pointList}>
-                <Text style={styles.point}>- Auth securisee par token et tenant.</Text>
-                <Text style={styles.point}>- Creation de ventes avec lignes produits.</Text>
-                <Text style={styles.point}>- Suivi des factures payees / impayees / partielles.</Text>
-              </View>
-            </View>
-          ) : null}
-
-          <View style={[styles.card, isDesktop && styles.cardDesktop]}>
+          <AppCard style={[styles.card, isDesktop && styles.cardDesktop]}>
             <Text style={styles.title}>{mode === 'login' ? 'Connexion' : 'Inscription'}</Text>
             <Text style={styles.subtitle}>
               {mode === 'login'
@@ -156,151 +149,55 @@ export function LoginScreen() {
                 : 'Creer un compte admin + boutique, puis connexion automatique.'}
             </Text>
 
-            <View style={styles.modeRow}>
-              <Pressable
-                style={[styles.modeButton, mode === 'login' && styles.modeButtonActive]}
-                onPress={() => {
-                  setMode('login');
-                  setError(null);
-                }}
-              >
-                <Text style={[styles.modeText, mode === 'login' && styles.modeTextActive]}>Connexion</Text>
-              </Pressable>
+            <SegmentedControl
+              options={[...AUTH_MODE_OPTIONS]}
+              value={mode}
+              onChange={(value) => {
+                setMode(value as AuthMode);
+                setError(null);
+              }}
+            />
 
-              <Pressable
-                style={[styles.modeButton, mode === 'register' && styles.modeButtonActive]}
-                onPress={() => {
-                  setMode('register');
-                  setError(null);
-                }}
-              >
-                <Text style={[styles.modeText, mode === 'register' && styles.modeTextActive]}>Inscription</Text>
-              </Pressable>
+            <View style={styles.formSection}>
+              {mode === 'login' ? (
+                <LoginFormSection
+                  email={email}
+                  password={password}
+                  isLoading={isAuthenticating}
+                  canSubmit={canLogin}
+                  error={error}
+                  onEmailChange={setEmail}
+                  onPasswordChange={setPassword}
+                  onSubmit={() => {
+                    void onLoginSubmit();
+                  }}
+                />
+              ) : (
+                <RegisterFormSection
+                  registerName={registerName}
+                  registerEmail={registerEmail}
+                  registerPassword={registerPassword}
+                  storeName={storeName}
+                  plansLoading={plansLoading}
+                  planOptions={planOptions}
+                  selectedPlanId={safePlanId}
+                  isLoading={isAuthenticating}
+                  canSubmit={canRegister}
+                  error={error}
+                  onRegisterNameChange={setRegisterName}
+                  onRegisterEmailChange={setRegisterEmail}
+                  onRegisterPasswordChange={setRegisterPassword}
+                  onStoreNameChange={setStoreName}
+                  onPlanSelect={setPlanId}
+                  onSubmit={() => {
+                    void onRegisterSubmit();
+                  }}
+                />
+              )}
             </View>
 
-            {mode === 'login' ? (
-              <>
-                <Text style={styles.label}>Email</Text>
-                <TextInput
-                  style={styles.input}
-                  value={email}
-                  onChangeText={setEmail}
-                  autoCapitalize='none'
-                  keyboardType='email-address'
-                  placeholder='admin@boutique.com'
-                  placeholderTextColor={colors.neutral400}
-                />
-
-                <Text style={styles.label}>Mot de passe</Text>
-                <TextInput
-                  style={styles.input}
-                  value={password}
-                  onChangeText={setPassword}
-                  secureTextEntry
-                  placeholder='********'
-                  placeholderTextColor={colors.neutral400}
-                />
-
-                {error ? <Text style={styles.error}>{error}</Text> : null}
-
-                <Pressable
-                  style={[styles.button, !canLogin && styles.buttonDisabled]}
-                  onPress={onLoginSubmit}
-                  disabled={!canLogin}
-                >
-                  {isAuthenticating ? (
-                    <ActivityIndicator color={colors.white} />
-                  ) : (
-                    <Text style={styles.buttonText}>Se connecter</Text>
-                  )}
-                </Pressable>
-              </>
-            ) : (
-              <>
-                <Text style={styles.label}>Nom complet</Text>
-                <TextInput
-                  style={styles.input}
-                  value={registerName}
-                  onChangeText={setRegisterName}
-                  placeholder='Jean Dupont'
-                  placeholderTextColor={colors.neutral400}
-                />
-
-                <Text style={styles.label}>Email</Text>
-                <TextInput
-                  style={styles.input}
-                  value={registerEmail}
-                  onChangeText={setRegisterEmail}
-                  autoCapitalize='none'
-                  keyboardType='email-address'
-                  placeholder='admin@boutique.com'
-                  placeholderTextColor={colors.neutral400}
-                />
-
-                <Text style={styles.label}>Mot de passe (min 8)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={registerPassword}
-                  onChangeText={setRegisterPassword}
-                  secureTextEntry
-                  placeholder='********'
-                  placeholderTextColor={colors.neutral400}
-                />
-
-                <Text style={styles.label}>Nom boutique</Text>
-                <TextInput
-                  style={styles.input}
-                  value={storeName}
-                  onChangeText={setStoreName}
-                  placeholder='Ma Boutique'
-                  placeholderTextColor={colors.neutral400}
-                />
-
-                <Text style={styles.label}>Plan</Text>
-                {plansLoading ? (
-                  <View style={styles.planLoading}>
-                    <ActivityIndicator size='small' color={colors.primary600} />
-                    <Text style={styles.planLoadingText}>Chargement des plans...</Text>
-                  </View>
-                ) : plans.length > 0 ? (
-                  <View style={styles.plansWrap}>
-                    {plans.map((plan) => {
-                      const active = safePlanId === plan.id;
-                      return (
-                        <Pressable
-                          key={plan.id}
-                          style={[styles.planChip, active && styles.planChipActive]}
-                          onPress={() => setPlanId(plan.id)}
-                        >
-                          <Text style={[styles.planChipText, active && styles.planChipTextActive]}>
-                            {plan.name || plan.id}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                ) : (
-                  <Text style={styles.planFallback}>Aucun plan recu, fallback automatique sur `basic`.</Text>
-                )}
-
-                {error ? <Text style={styles.error}>{error}</Text> : null}
-
-                <Pressable
-                  style={[styles.button, !canRegister && styles.buttonDisabled]}
-                  onPress={onRegisterSubmit}
-                  disabled={!canRegister}
-                >
-                  {isAuthenticating ? (
-                    <ActivityIndicator color={colors.white} />
-                  ) : (
-                    <Text style={styles.buttonText}>Creer mon compte</Text>
-                  )}
-                </Pressable>
-              </>
-            )}
-
             <Text style={styles.envText}>Backend: {API_BASE_URL}</Text>
-          </View>
+          </AppCard>
         </View>
       </ScrollView>
     </View>
@@ -332,44 +229,10 @@ const styles = StyleSheet.create({
     minHeight: 620,
     ...shadows.md,
   },
-  leftPanel: {
-    flex: 1,
-    backgroundColor: colors.primary700,
-    paddingHorizontal: 28,
-    paddingVertical: 34,
-    justifyContent: 'space-between',
-  },
-  brand: {
-    color: colors.white,
-    ...typography.bodyMedium,
-  },
-  heroTitle: {
-    marginTop: 24,
-    color: colors.white,
-    ...typography.display,
-  },
-  heroText: {
-    marginTop: 12,
-    color: colors.primary100,
-    ...typography.label,
-  },
-  pointList: {
-    marginTop: 24,
-    gap: 10,
-  },
-  point: {
-    ...typography.label,
-    color: colors.primary100,
-  },
   card: {
     width: '100%',
     maxWidth: 460,
-    backgroundColor: colors.white,
     borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.neutral200,
-    padding: 20,
-    ...shadows.sm,
   },
   cardDesktop: {
     borderWidth: 0,
@@ -377,6 +240,8 @@ const styles = StyleSheet.create({
     maxWidth: 480,
     paddingHorizontal: 28,
     paddingVertical: 28,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   title: {
     ...typography.h1,
@@ -388,105 +253,9 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 16,
   },
-  modeRow: {
-    flexDirection: 'row',
-    backgroundColor: colors.neutral100,
-    borderRadius: radius.pill,
-    padding: 4,
-    marginBottom: 12,
-  },
-  modeButton: {
-    flex: 1,
-    borderRadius: radius.pill,
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  modeButtonActive: {
-    backgroundColor: colors.primary50,
-  },
-  modeText: {
-    ...typography.label,
-    color: colors.neutral600,
-  },
-  modeTextActive: {
-    color: colors.primary600,
-  },
-  label: {
-    ...typography.label,
-    color: colors.neutral700,
-    marginBottom: 6,
-    marginTop: 10,
-  },
-  input: {
-    ...typography.body,
-    borderWidth: 1,
-    borderColor: colors.neutral300,
-    borderRadius: radius.md,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: colors.neutral900,
-    backgroundColor: colors.white,
-  },
-  plansWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 6,
-    gap: 8,
-  },
-  planChip: {
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.neutral300,
-    backgroundColor: colors.white,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  planChipActive: {
-    borderColor: colors.primary200,
-    backgroundColor: colors.primary50,
-  },
-  planChipText: {
-    ...typography.label,
-    color: colors.neutral700,
-  },
-  planChipTextActive: {
-    color: colors.primary600,
-    fontFamily: typography.label.fontFamily,
-  },
-  planLoading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
-  },
-  planLoadingText: {
-    ...typography.caption,
-    color: colors.neutral500,
-  },
-  planFallback: {
-    ...typography.caption,
-    color: colors.neutral500,
-    marginTop: 8,
-  },
-  error: {
-    ...typography.label,
-    color: colors.danger600,
+  formSection: {
     marginTop: 12,
-  },
-  button: {
-    marginTop: 18,
-    borderRadius: radius.md,
-    backgroundColor: colors.primary600,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  buttonText: {
-    color: colors.white,
-    ...typography.label,
+    gap: 12,
   },
   envText: {
     marginTop: 12,
