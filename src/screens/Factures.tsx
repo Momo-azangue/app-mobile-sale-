@@ -50,6 +50,8 @@ function parsePositiveAmount(raw: string): number | null {
   return parsed;
 }
 
+const MONEY_EPSILON = 0.000001;
+
 function toPdfUrl(invoiceId: string): string {
   const normalizedBase = API_BASE_URL.replace(/\/$/, '');
   return `${normalizedBase}/api/v1/invoices/${invoiceId}/pdf`;
@@ -228,6 +230,13 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
     const amount = parsePositiveAmount(paymentAmount);
     if (!amount) {
       Alert.alert('Validation', 'Le montant de paiement doit etre positif.');
+      return;
+    }
+    if (amount - selectedInvoice.balanceDue > MONEY_EPSILON) {
+      Alert.alert(
+        'Validation',
+        `Le montant saisi depasse le reste du (${formatCurrency(selectedInvoice.balanceDue)}).`
+      );
       return;
     }
 

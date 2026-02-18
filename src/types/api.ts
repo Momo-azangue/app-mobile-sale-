@@ -74,6 +74,8 @@ export interface ProviderResponseDTO {
   address?: string;
   conditionsPaiement?: string;
   tenantId?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ProviderRequestDTO {
@@ -117,6 +119,8 @@ export interface ProductResponseDTO {
   price?: number;
   categoryId?: string;
   categoryName?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ProductRequestDTO {
@@ -135,6 +139,9 @@ export interface SaleResponseDTO {
   clientName: string;
   products: ProductItemResponseDTO[];
   montantTotal: number;
+  date?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type InvoiceStatus = 'PAYE' | 'PARTIEL' | 'IMPAYE';
@@ -151,6 +158,7 @@ export interface SaleRequestDTO {
   products: SaleCreateProductItemDTO[];
   date: string;
   invoiceStatus: InvoiceStatus;
+  initialPaidAmount?: number;
 }
 
 export interface InvoiceLineDTO {

@@ -49,6 +49,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
 
   const [clientId, setClientId] = useState('');
   const [status, setStatus] = useState<InvoiceStatus>('IMPAYE');
+  const [initialPaidAmount, setInitialPaidAmount] = useState('');
   const [lines, setLines] = useState<SaleLineForm[]>([
     { id: nextLineId(), productId: '', quantity: '1', priceAtSale: '' },
   ]);
@@ -92,6 +93,18 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
     () => products.map((product) => ({ label: product.name, value: product.id })),
     [products],
   );
+  const draftTotal = useMemo(
+    () =>
+      lines.reduce((total, line) => {
+        const quantity = Number(line.quantity);
+        const price = Number(line.priceAtSale);
+        if (!Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(price) || price <= 0) {
+          return total;
+        }
+        return total + quantity * price;
+      }, 0),
+    [lines],
+  );
 
   const updateLine = (lineId: string, patch: Partial<SaleLineForm>) => {
     setLines((previous) => previous.map((line) => (line.id === lineId ? { ...line, ...patch } : line)));
@@ -119,6 +132,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
         productId: line.productId,
         quantity,
         priceAtSale,
+        selectedProduct: productById.get(line.productId),
       };
     });
 
@@ -136,11 +150,50 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
       return null;
     }
 
+    const minPriceViolation = mappedProducts.find((line) => {
+      const minPrice = line.selectedProduct?.price;
+      if (!Number.isFinite(minPrice)) {
+        return false;
+      }
+      return line.priceAtSale < (minPrice as number);
+    });
+    if (minPriceViolation?.selectedProduct && Number.isFinite(minPriceViolation.selectedProduct.price)) {
+      Alert.alert(
+        'Validation',
+        `Le prix de vente de ${minPriceViolation.selectedProduct.name} ne peut pas etre inferieur au prix configure (${minPriceViolation.selectedProduct.price}).`,
+      );
+      return null;
+    }
+
+    const totalAmount = mappedProducts.reduce((total, line) => total + line.quantity * line.priceAtSale, 0);
+    if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+      Alert.alert('Validation', 'Le montant total de la vente doit etre strictement positif.');
+      return null;
+    }
+
+    let payloadInitialPaidAmount: number | undefined;
+    if (status === 'PAYE') {
+      payloadInitialPaidAmount = totalAmount;
+    }
+    if (status === 'PARTIEL') {
+      const parsedInitialPaidAmount = Number(initialPaidAmount);
+      if (!Number.isFinite(parsedInitialPaidAmount) || parsedInitialPaidAmount <= 0 || parsedInitialPaidAmount >= totalAmount) {
+        Alert.alert('Validation', 'Pour un statut partiel, entrez une avance > 0 et strictement inferieure au total.');
+        return null;
+      }
+      payloadInitialPaidAmount = parsedInitialPaidAmount;
+    }
+
     return {
       clientId,
-      products: mappedProducts,
+      products: mappedProducts.map((line) => ({
+        productId: line.productId,
+        quantity: line.quantity,
+        priceAtSale: line.priceAtSale,
+      })),
       date: new Date().toISOString(),
       invoiceStatus: status,
+      initialPaidAmount: payloadInitialPaidAmount,
     };
   };
 
@@ -229,11 +282,38 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
         <ChipGroup
           options={statusOptions}
           value={status}
-          onChange={(value) => setStatus(value as InvoiceStatus)}
+          onChange={(value) => {
+            setStatus(value as InvoiceStatus);
+            if (value !== 'PARTIEL') {
+              setInitialPaidAmount('');
+            }
+          }}
           layout='wrap'
           tone='solid'
         />
+        {status === 'PAYE' ? (
+          <Text style={styles.statusHint}>Le total sera regle automatiquement a la creation de la vente.</Text>
+        ) : null}
       </View>
+
+      {status === 'PARTIEL' ? (
+        <View style={styles.formGroup}>
+          <InputField
+            label='Montant avance'
+            value={initialPaidAmount}
+            onChangeText={setInitialPaidAmount}
+            keyboardType='decimal-pad'
+            placeholder='Ex: 100'
+          />
+          <Text style={styles.statusHint}>Doit etre strictement inferieur au total de la vente.</Text>
+        </View>
+      ) : null}
+
+      {draftTotal > 0 ? (
+        <View style={styles.formGroup}>
+          <Text style={styles.totalPreview}>Total provisoire: {draftTotal.toFixed(2)}</Text>
+        </View>
+      ) : null}
 
       {lines.map((line, index) => {
         const selectedProduct = productById.get(line.productId);
@@ -256,6 +336,9 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
             />
 
             <Text style={styles.selectedProductText}>Selection: {selectedProduct?.name ?? '-'}</Text>
+            <Text style={styles.selectedProductText}>
+              Prix configure: {Number.isFinite(selectedProduct?.price) ? selectedProduct?.price : '-'}
+            </Text>
 
             <View style={styles.row}>
               <InputField
@@ -371,5 +454,14 @@ const styles = StyleSheet.create({
   },
   submitWrap: {
     marginTop: 12,
+  },
+  statusHint: {
+    marginTop: 8,
+    ...typography.caption,
+    color: colors.neutral500,
+  },
+  totalPreview: {
+    ...typography.bodyMedium,
+    color: colors.neutral900,
   },
 });

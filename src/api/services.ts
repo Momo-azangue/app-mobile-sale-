@@ -109,6 +109,14 @@ export async function createCategory(payload: CategoryRequestDTO): Promise<Categ
   return data;
 }
 
+export async function updateCategory(
+  categoryId: string,
+  payload: CategoryRequestDTO
+): Promise<CategoryResponseDTO> {
+  const { data } = await api.put<CategoryResponseDTO>(`/api/v1/categories/${categoryId}`, payload);
+  return data;
+}
+
 export async function deleteCategory(categoryId: string): Promise<void> {
   await api.delete(`/api/v1/categories/${categoryId}`);
 }
