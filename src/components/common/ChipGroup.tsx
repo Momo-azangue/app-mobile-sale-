@@ -28,7 +28,11 @@ export function ChipGroup({
 }: ChipGroupProps) {
   if (layout === 'row-scroll') {
     return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.wrap, style]}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.rowScrollContent, style]}
+      >
         {options.map((option) => {
           const active = value === option.value;
           return (
@@ -36,6 +40,7 @@ export function ChipGroup({
               key={option.value}
               style={[
                 styles.chip,
+                styles.chipRowScroll,
                 active && (tone === 'solid' ? styles.chipSolidActive : styles.chipSoftActive),
               ]}
               onPress={() => onChange(option.value)}
@@ -64,6 +69,7 @@ export function ChipGroup({
             key={option.value}
             style={[
               styles.chip,
+              styles.chipWrap,
               active && (tone === 'solid' ? styles.chipSolidActive : styles.chipSoftActive),
             ]}
             onPress={() => onChange(option.value)}
@@ -84,6 +90,11 @@ export function ChipGroup({
 }
 
 const styles = StyleSheet.create({
+  rowScrollContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 4,
+  },
   wrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -96,8 +107,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.neutral300,
     backgroundColor: colors.white,
+  },
+  chipWrap: {
     marginRight: 8,
     marginBottom: 8,
+  },
+  chipRowScroll: {
+    marginRight: 8,
   },
   chipSoftActive: {
     borderColor: colors.primary200,

@@ -29,6 +29,7 @@ import { ErrorState } from '../components/common/ErrorState';
 import { FormModal } from '../components/common/FormModal';
 import { InputField } from '../components/common/InputField';
 import { LoadingState } from '../components/common/LoadingState';
+import { SearchableSelectField, type SearchableSelectOption } from '../components/common/SearchableSelectField';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
 import { SegmentedControl } from '../components/common/SegmentedControl';
@@ -114,7 +115,14 @@ function movementVisual(type: MovementType): MovementVisual {
 
 export function StocksScreen({ refreshSignal }: StocksScreenProps) {
   const [activeTab, setActiveTab] = useState<'produits' | 'mouvements'>('produits');
-  const [query, setQuery] = useState('');
+  const [productQuery, setProductQuery] = useState('');
+  const [movementQuery, setMovementQuery] = useState('');
+  const [showProductFilters, setShowProductFilters] = useState(false);
+  const [showMovementFilters, setShowMovementFilters] = useState(false);
+  const [productCategoryFilter, setProductCategoryFilter] = useState('all');
+  const [productStockFilter, setProductStockFilter] = useState<'all' | 'available' | 'low' | 'zero'>('all');
+  const [movementTypeFilter, setMovementTypeFilter] = useState<'all' | MovementType>('all');
+  const [movementProductFilter, setMovementProductFilter] = useState('all');
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -165,14 +173,51 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
 
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
 
-  const categoryOptions = useMemo<ChipOption[]>(
-    () => categories.map((category) => ({ label: category.nom, value: category.id })),
+  const categoryOptions = useMemo<SearchableSelectOption[]>(
+    () =>
+      categories.map((category) => ({
+        label: category.nom,
+        value: category.id,
+        subtitle: category.description,
+      })),
     [categories]
   );
-  const productOptions = useMemo<ChipOption[]>(
-    () => products.map((product) => ({ label: product.name, value: product.id })),
+  const categoryFilterOptions = useMemo<SearchableSelectOption[]>(
+    () => [{ label: 'Toutes les categories', value: 'all' }, ...categoryOptions],
+    [categoryOptions]
+  );
+  const productOptions = useMemo<SearchableSelectOption[]>(
+    () =>
+      products.map((product) => ({
+        label: product.name,
+        value: product.id,
+        subtitle: product.categoryName ? `Categorie: ${product.categoryName}` : undefined,
+      })),
     [products]
   );
+  const movementProductFilterOptions = useMemo<SearchableSelectOption[]>(
+    () => [{ label: 'Tous les produits', value: 'all' }, ...productOptions],
+    [productOptions]
+  );
+  const stockFilterOptions = useMemo<ChipOption[]>(
+    () => [
+      { label: 'Tous', value: 'all' },
+      { label: 'Disponible', value: 'available' },
+      { label: 'Stock bas', value: 'low' },
+      { label: 'Rupture', value: 'zero' },
+    ],
+    []
+  );
+  const movementTypeFilterOptions = useMemo<ChipOption[]>(
+    () => [{ label: 'Tous', value: 'all' }, ...MOVEMENT_TYPE_OPTIONS],
+    []
+  );
+  const productFilterCount =
+    (productCategoryFilter === 'all' ? 0 : 1)
+    + (productStockFilter === 'all' ? 0 : 1);
+  const movementFilterCount =
+    (movementProductFilter === 'all' ? 0 : 1)
+    + (movementTypeFilter === 'all' ? 0 : 1);
 
   const stockByProduct = useMemo(() => {
     const byProduct = new Map<string, ComputedStock>();
@@ -191,20 +236,39 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
   }, [movements]);
 
   const filteredProducts = useMemo(() => {
-    const lower = query.toLowerCase();
+    const lower = productQuery.toLowerCase();
     return products.filter((product) => {
       const blob = `${product.name} ${product.categoryName ?? ''}`.toLowerCase();
-      return blob.includes(lower);
+      const stock = stockByProduct.get(product.id) ?? { available: 0, consigned: 0 };
+      const matchQuery = blob.includes(lower);
+      const matchCategory = productCategoryFilter === 'all' ? true : product.categoryId === productCategoryFilter;
+      const matchStock =
+        productStockFilter === 'all'
+          ? true
+          : productStockFilter === 'available'
+            ? stock.available > 0
+            : productStockFilter === 'low'
+              ? stock.available > 0 && stock.available <= 5
+              : stock.available <= 0;
+      return matchQuery && matchCategory && matchStock;
     });
-  }, [products, query]);
+  }, [productCategoryFilter, productQuery, productStockFilter, products, stockByProduct]);
 
-  const sortedMovements = useMemo(() => {
-    return [...movements].sort((left, right) => {
+  const filteredMovements = useMemo(() => {
+    const lower = movementQuery.toLowerCase();
+    return movements.filter((movement) => {
+      const productName = productById.get(movement.productId)?.name ?? movement.productId;
+      const blob = `${productName} ${movement.type} ${movement.source ?? ''} ${movement.reason ?? ''}`.toLowerCase();
+      const matchQuery = blob.includes(lower);
+      const matchType = movementTypeFilter === 'all' ? true : movement.type === movementTypeFilter;
+      const matchProduct = movementProductFilter === 'all' ? true : movement.productId === movementProductFilter;
+      return matchQuery && matchType && matchProduct;
+    }).sort((left, right) => {
       const leftDate = left.date ? new Date(left.date).getTime() : 0;
       const rightDate = right.date ? new Date(right.date).getTime() : 0;
       return rightDate - leftDate;
     });
-  }, [movements]);
+  }, [movementProductFilter, movementQuery, movementTypeFilter, movements, productById]);
 
   const openCreateProductModal = () => {
     setEditingProductId(null);
@@ -369,11 +433,59 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
 
         {activeTab === 'produits' ? (
           <>
-            <SearchField
-              value={query}
-              onChangeText={setQuery}
-              placeholder='Rechercher un produit...'
-            />
+            <View style={styles.searchRow}>
+              <SearchField
+                value={productQuery}
+                onChangeText={setProductQuery}
+                placeholder='Rechercher un produit...'
+                style={styles.searchField}
+              />
+              <Pressable
+                style={[styles.filterButton, showProductFilters && styles.filterButtonActive]}
+                onPress={() => setShowProductFilters((current) => !current)}
+              >
+                <Feather name='sliders' size={16} color={showProductFilters ? colors.white : colors.neutral700} />
+                <Text style={[styles.filterButtonLabel, showProductFilters && styles.filterButtonLabelActive]}>
+                  Filtrer
+                </Text>
+                {productFilterCount > 0 ? (
+                  <View style={styles.filterBadge}>
+                    <Text style={styles.filterBadgeText}>{productFilterCount}</Text>
+                  </View>
+                ) : null}
+              </Pressable>
+            </View>
+            {showProductFilters ? (
+              <View style={styles.filtersPanel}>
+                <SearchableSelectField
+                  label='Categorie'
+                  modalTitle='Filtrer par categorie'
+                  placeholder='Toutes les categories'
+                  value={productCategoryFilter}
+                  options={categoryFilterOptions}
+                  onChange={setProductCategoryFilter}
+                />
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Niveau de stock</Text>
+                  <ChipGroup
+                    options={stockFilterOptions}
+                    value={productStockFilter}
+                    onChange={(value) => setProductStockFilter(value as 'all' | 'available' | 'low' | 'zero')}
+                    layout='row-scroll'
+                    tone='soft'
+                  />
+                </View>
+                <Pressable
+                  onPress={() => {
+                    setProductCategoryFilter('all');
+                    setProductStockFilter('all');
+                  }}
+                  hitSlop={8}
+                >
+                  <Text style={styles.resetLabel}>Reinitialiser</Text>
+                </Pressable>
+              </View>
+            ) : null}
 
             {filteredProducts.length === 0 ? (
               <EmptyState
@@ -424,43 +536,100 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
               </View>
             )}
           </>
-        ) : sortedMovements.length === 0 ? (
-          <EmptyState
-            icon='repeat'
-            title='Aucun mouvement'
-            description='Ajoutez votre premier mouvement de stock.'
-          />
         ) : (
-          <View style={styles.list}>
-            {sortedMovements.map((movement) => {
-              const visual = movementVisual(movement.type);
-              const productName = productById.get(movement.productId)?.name ?? movement.productId;
-
-              return (
-                <View key={movement.id} style={styles.card}>
-                  <View style={styles.movementHeader}>
-                    <View style={[styles.iconBubble, { backgroundColor: visual.background }]}>
-                      <Feather name={visual.icon} size={18} color={visual.color} />
-                    </View>
-
-                    <View style={styles.movementText}>
-                      <Text style={styles.productName}>{productName}</Text>
-                      <Text style={styles.productMeta}>{movement.reason || movement.source || '-'}</Text>
-                    </View>
-
-                    <Text style={styles.movementQty}>
-                      {visual.sign}
-                      {movement.quantity}
-                    </Text>
+          <>
+            <View style={styles.searchRow}>
+              <SearchField
+                value={movementQuery}
+                onChangeText={setMovementQuery}
+                placeholder='Rechercher un mouvement...'
+                style={styles.searchField}
+              />
+              <Pressable
+                style={[styles.filterButton, showMovementFilters && styles.filterButtonActive]}
+                onPress={() => setShowMovementFilters((current) => !current)}
+              >
+                <Feather name='sliders' size={16} color={showMovementFilters ? colors.white : colors.neutral700} />
+                <Text style={[styles.filterButtonLabel, showMovementFilters && styles.filterButtonLabelActive]}>
+                  Filtrer
+                </Text>
+                {movementFilterCount > 0 ? (
+                  <View style={styles.filterBadge}>
+                    <Text style={styles.filterBadgeText}>{movementFilterCount}</Text>
                   </View>
-
-                  <Text style={styles.gridLabel}>
-                    {movement.type} - {formatDate(movement.date)}
-                  </Text>
+                ) : null}
+              </Pressable>
+            </View>
+            {showMovementFilters ? (
+              <View style={styles.filtersPanel}>
+                <SearchableSelectField
+                  label='Produit'
+                  modalTitle='Filtrer par produit'
+                  placeholder='Tous les produits'
+                  value={movementProductFilter}
+                  options={movementProductFilterOptions}
+                  onChange={setMovementProductFilter}
+                />
+                <View style={styles.formGroup}>
+                  <Text style={styles.formLabel}>Type de mouvement</Text>
+                  <ChipGroup
+                    options={movementTypeFilterOptions}
+                    value={movementTypeFilter}
+                    onChange={(value) => setMovementTypeFilter(value as 'all' | MovementType)}
+                    layout='row-scroll'
+                    tone='soft'
+                  />
                 </View>
-              );
-            })}
-          </View>
+                <Pressable
+                  onPress={() => {
+                    setMovementProductFilter('all');
+                    setMovementTypeFilter('all');
+                  }}
+                  hitSlop={8}
+                >
+                  <Text style={styles.resetLabel}>Reinitialiser</Text>
+                </Pressable>
+              </View>
+            ) : null}
+            {filteredMovements.length === 0 ? (
+              <EmptyState
+                icon='repeat'
+                title='Aucun mouvement'
+                description='Ajoutez votre premier mouvement de stock.'
+              />
+            ) : (
+              <View style={styles.list}>
+                {filteredMovements.map((movement) => {
+                  const visual = movementVisual(movement.type);
+                  const productName = productById.get(movement.productId)?.name ?? movement.productId;
+
+                  return (
+                    <View key={movement.id} style={styles.card}>
+                      <View style={styles.movementHeader}>
+                        <View style={[styles.iconBubble, { backgroundColor: visual.background }]}>
+                          <Feather name={visual.icon} size={18} color={visual.color} />
+                        </View>
+
+                        <View style={styles.movementText}>
+                          <Text style={styles.productName}>{productName}</Text>
+                          <Text style={styles.productMeta}>{movement.reason || movement.source || '-'}</Text>
+                        </View>
+
+                        <Text style={styles.movementQty}>
+                          {visual.sign}
+                          {movement.quantity}
+                        </Text>
+                      </View>
+
+                      <Text style={styles.gridLabel}>
+                        {movement.type} - {formatDate(movement.date)}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
 
@@ -486,16 +655,15 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
           placeholder='Ex: 1500'
           keyboardType='numeric'
         />
-        <View style={styles.formGroup}>
-          <Text style={styles.formLabel}>Categorie</Text>
-          <ChipGroup
-            options={categoryOptions}
-            value={productCategoryId}
-            onChange={setProductCategoryId}
-            layout='row-scroll'
-            tone='soft'
-          />
-        </View>
+        <SearchableSelectField
+          label='Categorie'
+          modalTitle='Selectionner une categorie'
+          placeholder='Choisir une categorie'
+          value={productCategoryId}
+          options={categoryOptions}
+          onChange={setProductCategoryId}
+          disabled={categories.length === 0}
+        />
 
         <View style={styles.modalActions}>
           <View style={styles.actionItem}>
@@ -518,16 +686,15 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
         title='Nouveau mouvement'
         onClose={closeMovementModal}
       >
-        <View style={styles.formGroup}>
-          <Text style={styles.formLabel}>Produit</Text>
-          <ChipGroup
-            options={productOptions}
-            value={movementProductId}
-            onChange={setMovementProductId}
-            layout='row-scroll'
-            tone='soft'
-          />
-        </View>
+        <SearchableSelectField
+          label='Produit'
+          modalTitle='Selectionner un produit'
+          placeholder='Choisir un produit'
+          value={movementProductId}
+          options={productOptions}
+          onChange={setMovementProductId}
+          disabled={products.length === 0}
+        />
 
         <View style={styles.formGroup}>
           <Text style={styles.formLabel}>Type</Text>
@@ -601,6 +768,63 @@ const styles = StyleSheet.create({
   topAction: {
     marginTop: 14,
     marginBottom: 14,
+  },
+  searchRow: {
+    marginTop: 4,
+    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  searchField: {
+    flex: 1,
+  },
+  filterButton: {
+    minHeight: 46,
+    minWidth: 96,
+    paddingHorizontal: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.neutral300,
+    backgroundColor: colors.white,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    ...shadows.sm,
+  },
+  filterButtonActive: {
+    backgroundColor: colors.primary600,
+    borderColor: colors.primary600,
+  },
+  filterButtonLabel: {
+    ...typography.label,
+    color: colors.neutral700,
+  },
+  filterButtonLabelActive: {
+    color: colors.white,
+  },
+  filterBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    backgroundColor: colors.warning600,
+  },
+  filterBadgeText: {
+    ...typography.captionMedium,
+    color: colors.white,
+  },
+  filtersPanel: {
+    marginBottom: 8,
+    gap: 10,
+  },
+  resetLabel: {
+    ...typography.captionMedium,
+    color: colors.primary600,
+    paddingHorizontal: 4,
   },
   list: {
     gap: 12,

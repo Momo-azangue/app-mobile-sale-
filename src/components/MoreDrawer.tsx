@@ -9,6 +9,7 @@ import { SECONDARY_TABS, type NavigationTab } from '../navigation/tabs';
 interface MoreDrawerProps {
   visible: boolean;
   activeTab: NavigationTab;
+  shopName?: string;
   onClose: () => void;
   onSelectTab: (tab: NavigationTab) => void;
   onLogout: () => void;
@@ -17,6 +18,7 @@ interface MoreDrawerProps {
 export function MoreDrawer({
   visible,
   activeTab,
+  shopName = 'Ma boutique',
   onClose,
   onSelectTab,
   onLogout,
@@ -38,7 +40,9 @@ export function MoreDrawer({
           ]}
         >
           <View style={styles.header}>
-            <Text style={styles.title}>Plus</Text>
+            <Text style={styles.title} numberOfLines={1}>
+              {shopName}
+            </Text>
             <Pressable style={styles.closeBtn} onPress={onClose}>
               <Feather name='x' size={18} color={colors.neutral700} />
             </Pressable>

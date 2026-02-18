@@ -72,6 +72,7 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
   const [showManualModal, setShowManualModal] = useState(false);
   const [showFromSaleModal, setShowFromSaleModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showDetailModal, setShowDetailModal] = useState(false);
 
   const [manualClientName, setManualClientName] = useState('');
   const [manualClientEmail, setManualClientEmail] = useState('');
@@ -81,6 +82,7 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
 
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [selectedInvoice, setSelectedInvoice] = useState<InvoiceResponseDTO | null>(null);
+  const [detailInvoice, setDetailInvoice] = useState<InvoiceResponseDTO | null>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
 
@@ -154,6 +156,11 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
     setPaymentMethod('CASH');
   };
 
+  const closeDetailModal = () => {
+    setShowDetailModal(false);
+    setDetailInvoice(null);
+  };
+
   const handleCreateManualInvoice = async () => {
     if (!manualClientName.trim()) {
       Alert.alert('Validation', 'Le nom du client est obligatoire.');
@@ -220,6 +227,11 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
     setPaymentAmount(invoice.balanceDue > 0 ? invoice.balanceDue.toFixed(2) : '');
     setPaymentMethod('CASH');
     setShowPaymentModal(true);
+  };
+
+  const openDetailModal = (invoice: InvoiceResponseDTO) => {
+    setDetailInvoice(invoice);
+    setShowDetailModal(true);
   };
 
   const handleRecordPayment = async () => {
@@ -383,8 +395,19 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
                   <Text style={styles.metaLabel}>Date</Text>
                   <Text style={styles.metaValue}>{formatDate(invoice.date)}</Text>
                 </View>
+                <View style={styles.invoiceMetaRow}>
+                  <Text style={styles.metaLabel}>Vendeur</Text>
+                  <Text style={styles.metaValue}>{invoice.operatorName || 'Utilisateur'}</Text>
+                </View>
 
                 <View style={styles.actionRow}>
+                  <View style={styles.actionItem}>
+                    <AppButton
+                      label='Detail'
+                      variant='ghost'
+                      onPress={() => openDetailModal(invoice)}
+                    />
+                  </View>
                   <View style={styles.actionItem}>
                     <AppButton
                       label='Paiement'
@@ -543,6 +566,44 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
                 void handleRecordPayment();
               }}
             />
+          </View>
+        </View>
+      </FormModal>
+
+      <FormModal visible={showDetailModal} title='Detail facture' onClose={closeDetailModal}>
+        {detailInvoice ? (
+          <View style={styles.paymentSummary}>
+            <Text style={styles.paymentSummaryText}>Facture: {detailInvoice.invoiceNumber || detailInvoice.id}</Text>
+            <Text style={styles.paymentSummaryText}>Client: {detailInvoice.clientName || '-'}</Text>
+            <Text style={styles.paymentSummaryText}>Vendeur: {detailInvoice.operatorName || 'Utilisateur'}</Text>
+            <Text style={styles.paymentSummaryText}>Date: {formatDate(detailInvoice.date)}</Text>
+            <Text style={styles.paymentSummaryText}>Echeance: {formatDate(detailInvoice.dueDate)}</Text>
+            <Text style={styles.paymentSummaryText}>Statut: {detailInvoice.statut}</Text>
+            <Text style={styles.paymentSummaryText}>Montant: {formatCurrency(detailInvoice.montant)}</Text>
+            <Text style={styles.paymentSummaryText}>Deja paye: {formatCurrency(detailInvoice.amountPaid)}</Text>
+            <Text style={styles.paymentSummaryText}>Reste du: {formatCurrency(detailInvoice.balanceDue)}</Text>
+          </View>
+        ) : null}
+
+        <Text style={styles.methodLabel}>Lignes facture</Text>
+        {detailInvoice?.lines?.length ? (
+          <ScrollView style={styles.salesList}>
+            {detailInvoice.lines.map((line, index) => (
+              <View key={`${line.productId ?? line.productName ?? index}-${index}`} style={styles.saleItem}>
+                <Text style={styles.saleItemClient}>{line.productName ?? line.productId ?? 'Produit'}</Text>
+                <Text style={styles.saleItemMeta}>Quantite: {line.quantity}</Text>
+                <Text style={styles.saleItemMeta}>Prix unitaire: {formatCurrency(line.unitPrice)}</Text>
+                <Text style={styles.saleItemMeta}>Total: {formatCurrency(line.total)}</Text>
+              </View>
+            ))}
+          </ScrollView>
+        ) : (
+          <Text style={styles.emptySalesText}>Aucune ligne.</Text>
+        )}
+
+        <View style={styles.modalActions}>
+          <View style={styles.actionItem}>
+            <AppButton label='Fermer' variant='outline' onPress={closeDetailModal} />
           </View>
         </View>
       </FormModal>

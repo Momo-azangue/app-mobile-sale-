@@ -12,6 +12,7 @@ export interface AuthResponseDTO {
   tokenType: string;
   expiresIn: number;
   refreshExpiresIn?: number;
+  name?: string;
   email: string;
   role: string;
   tenantId: string;
@@ -37,6 +38,7 @@ export interface RegisterRequestDTO {
 }
 
 export interface UserResponseDTO {
+  name?: string;
   email: string;
   role: string;
 }
@@ -131,12 +133,17 @@ export interface ProductRequestDTO {
 
 export interface ProductItemResponseDTO {
   productId: string;
+  productName?: string;
   quantity: number;
+  priceAtSale?: number;
+  consignment?: boolean;
 }
 
 export interface SaleResponseDTO {
   id: string;
   clientName: string;
+  operatorId?: string;
+  operatorName?: string;
   products: ProductItemResponseDTO[];
   montantTotal: number;
   date?: string;
@@ -192,6 +199,8 @@ export interface InvoiceResponseDTO {
   invoiceNumber: string;
   saleId?: string;
   clientName: string;
+  operatorId?: string;
+  operatorName?: string;
   clientEmail?: string;
   clientPhone?: string;
   montant: number;
@@ -267,6 +276,7 @@ export interface SessionState {
   accessToken: string;
   refreshToken: string;
   tenantId: string;
+  name?: string;
   email: string;
   role: string;
   tokenType: string;

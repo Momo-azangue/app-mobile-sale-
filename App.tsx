@@ -29,6 +29,7 @@ import { LoginScreen } from './src/screens/auth/Login';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { colors } from './src/theme/tokens';
 import { type NavigationTab } from './src/navigation/tabs';
+import { listCommerceSettings } from './src/api/services';
 
 const AUTO_REFRESH_TABS: NavigationTab[] = ['dashboard', 'ventes', 'stocks', 'factures'];
 const AUTO_REFRESH_INTERVAL_MS = 3600_000;
@@ -41,6 +42,7 @@ function AppShell() {
   const [showNewSale, setShowNewSale] = useState(false);
   const [showMoreDrawer, setShowMoreDrawer] = useState(false);
   const [refreshSignal, setRefreshSignal] = useState(0);
+  const [shopName, setShopName] = useState('Ma boutique');
   const appStateRef = useRef(AppState.currentState);
 
   const bumpRefresh = useCallback(() => {
@@ -50,6 +52,35 @@ function AppShell() {
   const isAutoRefreshEnabled = Boolean(
     session && !showNewSale && AUTO_REFRESH_TABS.includes(activeTab),
   );
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!session) {
+      setShopName('Ma boutique');
+      return () => {
+        mounted = false;
+      };
+    }
+
+    (async () => {
+      try {
+        const settings = await listCommerceSettings();
+        const resolvedName = settings[0]?.nom?.trim();
+        if (mounted) {
+          setShopName(resolvedName && resolvedName.length > 0 ? resolvedName : 'Ma boutique');
+        }
+      } catch {
+        if (mounted) {
+          setShopName('Ma boutique');
+        }
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [refreshSignal, session]);
 
   useEffect(() => {
     if (!isAutoRefreshEnabled) {
@@ -183,6 +214,7 @@ function AppShell() {
             <MoreDrawer
               visible={showMoreDrawer}
               activeTab={activeTab}
+              shopName={shopName}
               onClose={() => setShowMoreDrawer(false)}
               onSelectTab={(tab) => {
                 setActiveTab(tab);

@@ -12,8 +12,9 @@ import { EmptyState } from '../components/common/EmptyState';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { AppButton } from '../components/common/AppButton';
 import { AppCard } from '../components/common/AppCard';
-import { ChipGroup, type ChipOption } from '../components/common/ChipGroup';
+import { ChipGroup } from '../components/common/ChipGroup';
 import { InputField } from '../components/common/InputField';
+import { SearchableSelectField, type SearchableSelectOption } from '../components/common/SearchableSelectField';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface NouvelleVenteProps {
@@ -81,16 +82,32 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   const { refreshing, onRefresh } = usePullToRefresh(() => loadReferences(false));
 
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
-  const clientOptions = useMemo<ChipOption[]>(
-    () => clients.map((client) => ({ label: client.name, value: client.id })),
+  const clientOptions = useMemo<SearchableSelectOption[]>(
+    () =>
+      clients.map((client) => ({
+        label: client.name,
+        value: client.id,
+        subtitle: [client.phone, client.email].filter(Boolean).join(' - ') || undefined,
+        keywords: `${client.email ?? ''} ${client.phone ?? ''}`,
+      })),
     [clients],
   );
-  const statusOptions = useMemo<ChipOption[]>(
+  const statusOptions = useMemo(
     () => STATUS_OPTIONS.map((option) => ({ label: option.label, value: option.value })),
     [],
   );
-  const productOptions = useMemo<ChipOption[]>(
-    () => products.map((product) => ({ label: product.name, value: product.id })),
+  const productOptions = useMemo<SearchableSelectOption[]>(
+    () =>
+      products.map((product) => ({
+        label: product.name,
+        value: product.id,
+        subtitle: [
+          Number.isFinite(product.price) ? `Prix ${product.price}` : null,
+          product.categoryName ?? null,
+        ]
+          .filter(Boolean)
+          .join(' - '),
+      })),
     [products],
   );
   const draftTotal = useMemo(
@@ -273,8 +290,14 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
       <ScreenHeader title='Nouvelle vente' subtitle='Creation d une vente et generation de facture' />
 
       <View style={styles.formGroup}>
-        <Text style={styles.label}>Client</Text>
-        <ChipGroup options={clientOptions} value={clientId} onChange={setClientId} layout='wrap' tone='soft' />
+        <SearchableSelectField
+          label='Client'
+          modalTitle='Selectionner un client'
+          placeholder='Choisir un client'
+          value={clientId}
+          options={clientOptions}
+          onChange={setClientId}
+        />
       </View>
 
       <View style={styles.formGroup}>
@@ -326,13 +349,13 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
               </Pressable>
             </View>
 
-            <Text style={styles.label}>Produit</Text>
-            <ChipGroup
-              options={productOptions}
+            <SearchableSelectField
+              label='Produit'
+              modalTitle={`Selectionner un produit (ligne ${index + 1})`}
+              placeholder='Choisir un produit'
               value={line.productId}
+              options={productOptions}
               onChange={(value) => updateLine(line.id, { productId: value })}
-              layout='row-scroll'
-              tone='soft'
             />
 
             <Text style={styles.selectedProductText}>Selection: {selectedProduct?.name ?? '-'}</Text>
