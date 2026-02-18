@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { inviteUserToTenant } from '../api/services';
+import { inviteUserToTenant, listInvitations } from '../api/services';
 import { getErrorMessage } from '../api/errors';
-import type { InvitationRole } from '../types/api';
+import type { InvitationResponseDTO, InvitationRole, InvitationStatus } from '../types/api';
 import { useAuth } from '../context/AuthContext';
 import { colors, radius } from '../theme/tokens';
 import { typography } from '../theme/typography';
@@ -14,6 +14,7 @@ import { ErrorState } from '../components/common/ErrorState';
 import { FloatingActionButton } from '../components/common/FloatingActionButton';
 import { FormModal } from '../components/common/FormModal';
 import { InputField } from '../components/common/InputField';
+import { LoadingState } from '../components/common/LoadingState';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SegmentedControl, type SegmentedOption } from '../components/common/SegmentedControl';
 
@@ -21,22 +22,23 @@ interface InvitationsScreenProps {
   refreshSignal: number;
 }
 
-interface LocalInvitationEntry {
-  id: string;
-  email: string;
-  role: InvitationRole;
-  createdAt: string;
-}
+const statusMeta: Record<InvitationStatus, { label: string; text: string; bg: string }> = {
+  PENDING: { label: 'En attente', text: colors.warning600, bg: colors.warning100 },
+  ACCEPTED: { label: 'Acceptee', text: colors.success600, bg: colors.success100 },
+  EXPIRED: { label: 'Expiree', text: colors.danger600, bg: colors.danger100 },
+};
 
 export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
-  void refreshSignal;
   const { session } = useAuth();
 
-  const [showInviteForm, setShowInviteForm] = useState(false);
+  const [invitations, setInvitations] = useState<InvitationResponseDTO[]>([]);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [showInviteForm, setShowInviteForm] = useState(false);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<InvitationRole>('EMPLOYE');
-  const [sentInvitations, setSentInvitations] = useState<LocalInvitationEntry[]>([]);
 
   const roleOptions = useMemo<SegmentedOption[]>(
     () => [
@@ -45,6 +47,26 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
     ],
     []
   );
+
+  const loadInvitations = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const fetched = await listInvitations();
+      setInvitations(fetched);
+    } catch (loadError) {
+      setError(getErrorMessage(loadError));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!session?.tenantId) {
+      return;
+    }
+    void loadInvitations();
+  }, [loadInvitations, refreshSignal, session?.tenantId]);
 
   if (!session?.tenantId) {
     return (
@@ -78,17 +100,8 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
         role,
       });
 
-      setSentInvitations((current) => [
-        {
-          id: `${Date.now()}`,
-          email: email.trim(),
-          role,
-          createdAt: new Date().toISOString(),
-        },
-        ...current,
-      ]);
-
       closeCreateModal();
+      await loadInvitations();
       Alert.alert('Succes', 'Invitation envoyee.');
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
@@ -97,40 +110,49 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
     }
   };
 
+  if (loading) {
+    return <LoadingState message='Chargement invitations...' />;
+  }
+
+  if (error) {
+    return <ErrorState title='Erreur invitations' message={error} onRetry={() => void loadInvitations()} />;
+  }
+
   return (
     <View style={styles.wrapper}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        <ScreenHeader title='Invitations' subtitle='Inviter des utilisateurs dans la boutique' />
+        <ScreenHeader title='Invitations' subtitle='Inviter et suivre les utilisateurs de la boutique' />
 
-        <AppCard style={styles.infoCard}>
-          <Text style={styles.infoText}>
-            Cette API envoie les invitations par email. L historique distant n est pas encore expose par le backend.
-          </Text>
-        </AppCard>
-
-        {sentInvitations.length === 0 ? (
+        {invitations.length === 0 ? (
           <EmptyState
             icon='user-plus'
-            title='Aucune invitation envoyee'
+            title='Aucune invitation'
             description='Envoyez une invitation pour ajouter un nouvel utilisateur.'
             actionLabel='Inviter'
             onAction={() => setShowInviteForm(true)}
           />
         ) : (
           <View style={styles.list}>
-            {sentInvitations.map((invitation) => (
-              <AppCard key={invitation.id} style={styles.invitationCard}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.invitationEmail}>{invitation.email}</Text>
-                  <View style={styles.roleBadge}>
-                    <Text style={styles.roleBadgeText}>{invitation.role}</Text>
+            {invitations.map((invitation) => {
+              const meta = statusMeta[invitation.status] ?? statusMeta.PENDING;
+              return (
+                <AppCard key={invitation.id} style={styles.invitationCard}>
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.invitationEmail}>{invitation.email}</Text>
+                    <View style={[styles.statusBadge, { backgroundColor: meta.bg }]}>
+                      <Text style={[styles.statusBadgeText, { color: meta.text }]}>{meta.label}</Text>
+                    </View>
                   </View>
-                </View>
-                <Text style={styles.invitationMeta}>
-                  Envoyee le {new Date(invitation.createdAt).toLocaleString()}
-                </Text>
-              </AppCard>
-            ))}
+
+                  <View style={styles.metaRow}>
+                    <Text style={styles.roleBadgeText}>{invitation.role}</Text>
+                    <Text style={styles.invitationMeta}>
+                      Envoyee le {invitation.createdAt ? new Date(invitation.createdAt).toLocaleString() : '-'}
+                    </Text>
+                  </View>
+                </AppCard>
+              );
+            })}
           </View>
         )}
       </ScrollView>
@@ -201,13 +223,6 @@ const styles = StyleSheet.create({
     paddingTop: 24,
     paddingBottom: 120,
   },
-  infoCard: {
-    marginBottom: 12,
-  },
-  infoText: {
-    ...typography.label,
-    color: colors.neutral600,
-  },
   list: {
     marginTop: 8,
     gap: 12,
@@ -226,11 +241,19 @@ const styles = StyleSheet.create({
     ...typography.bodyMedium,
     color: colors.neutral900,
   },
-  roleBadge: {
+  statusBadge: {
     borderRadius: radius.pill,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    backgroundColor: colors.primary100,
+  },
+  statusBadgeText: {
+    ...typography.captionMedium,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
   },
   roleBadgeText: {
     ...typography.captionMedium,

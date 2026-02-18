@@ -95,16 +95,34 @@ export interface CategoryRequestDTO {
 }
 
 export type InvitationRole = 'ADMIN' | 'EMPLOYE';
+export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'EXPIRED';
 
 export interface InviteUserRequestDTO {
   email: string;
   role: InvitationRole;
 }
 
+export interface InvitationResponseDTO {
+  id: string;
+  email: string;
+  role: InvitationRole;
+  status: InvitationStatus;
+  createdAt?: string;
+  expiresAt?: string;
+}
+
 export interface ProductResponseDTO {
   id: string;
   name: string;
+  price?: number;
+  categoryId?: string;
   categoryName?: string;
+}
+
+export interface ProductRequestDTO {
+  name: string;
+  price: number;
+  categoryId: string;
 }
 
 export interface ProductItemResponseDTO {
@@ -120,6 +138,7 @@ export interface SaleResponseDTO {
 }
 
 export type InvoiceStatus = 'PAYE' | 'PARTIEL' | 'IMPAYE';
+export type PaymentMethod = 'CASH' | 'MOBILE_MONEY' | 'CARTE';
 
 export interface SaleCreateProductItemDTO {
   productId: string;
@@ -141,6 +160,23 @@ export interface InvoiceLineDTO {
   unitPrice: number;
   total: number;
   consignment?: boolean;
+}
+
+export interface InvoiceCreateRequestDTO {
+  saleId?: string;
+  clientId?: string;
+  clientName?: string;
+  clientEmail?: string;
+  clientPhone?: string;
+  date?: string;
+  dueDate?: string;
+  montant: number;
+  lines?: InvoiceLineDTO[];
+}
+
+export interface InvoicePaymentRequestDTO {
+  montant: number;
+  moyen: PaymentMethod;
 }
 
 export interface InvoiceResponseDTO {
@@ -184,6 +220,18 @@ export type MovementSource =
 
 export interface StockMovementResponseDTO {
   id: string;
+  productId: string;
+  quantity: number;
+  type: MovementType;
+  source?: MovementSource;
+  date?: string;
+  sourceId?: string;
+  destinationId?: string;
+  operatorId?: string;
+  reason?: string;
+}
+
+export interface StockMovementRequestDTO {
   productId: string;
   quantity: number;
   type: MovementType;

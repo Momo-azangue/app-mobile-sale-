@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
-import { createProvider, deleteProvider, listProviders } from '../api/services';
+import { createProvider, deleteProvider, listProviders, updateProvider } from '../api/services';
 import { getErrorMessage } from '../api/errors';
 import type { ProviderResponseDTO } from '../types/api';
 import { colors } from '../theme/tokens';
@@ -29,11 +29,17 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
   const [error, setError] = useState<string | null>(null);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editAddress, setEditAddress] = useState('');
 
   const loadProviders = useCallback(async () => {
     setLoading(true);
@@ -70,6 +76,15 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
   const closeCreateModal = () => {
     setShowCreateForm(false);
     resetForm();
+  };
+
+  const closeEditModal = () => {
+    setShowEditForm(false);
+    setEditingProviderId(null);
+    setEditName('');
+    setEditEmail('');
+    setEditPhone('');
+    setEditAddress('');
   };
 
   const handleCreateProvider = async () => {
@@ -114,6 +129,42 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
     ]);
   };
 
+  const openEditModal = (provider: ProviderResponseDTO) => {
+    setEditingProviderId(provider.id);
+    setEditName(provider.name);
+    setEditEmail(provider.email ?? '');
+    setEditPhone(provider.phone ?? '');
+    setEditAddress(provider.address ?? '');
+    setShowEditForm(true);
+  };
+
+  const handleUpdateProvider = async () => {
+    if (!editingProviderId) {
+      return;
+    }
+    if (!editName.trim()) {
+      Alert.alert('Validation', 'Le nom est obligatoire.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await updateProvider(editingProviderId, {
+        name: editName.trim(),
+        email: editEmail.trim() || undefined,
+        phone: editPhone.trim() || undefined,
+        address: editAddress.trim() || undefined,
+      });
+
+      closeEditModal();
+      await loadProviders();
+    } catch (updateError) {
+      Alert.alert('Erreur', getErrorMessage(updateError));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return <LoadingState message='Chargement fournisseurs...' />;
   }
@@ -147,9 +198,14 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
               <AppCard key={provider.id} style={styles.providerCard}>
                 <View style={styles.providerHeader}>
                   <Text style={styles.providerName}>{provider.name}</Text>
-                  <Pressable onPress={() => handleDeleteProvider(provider)}>
-                    <Feather name='trash-2' size={18} color={colors.danger600} />
-                  </Pressable>
+                  <View style={styles.actionsWrap}>
+                    <Pressable onPress={() => openEditModal(provider)}>
+                      <Feather name='edit-2' size={18} color={colors.neutral600} />
+                    </Pressable>
+                    <Pressable onPress={() => handleDeleteProvider(provider)}>
+                      <Feather name='trash-2' size={18} color={colors.danger600} />
+                    </Pressable>
+                  </View>
                 </View>
 
                 <Text style={styles.providerMeta}>{provider.email || '-'}</Text>
@@ -218,6 +274,59 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
           </View>
         </View>
       </FormModal>
+
+      <FormModal
+        visible={showEditForm}
+        title='Modifier fournisseur'
+        onClose={closeEditModal}
+      >
+        <InputField
+          label='Nom'
+          value={editName}
+          onChangeText={setEditName}
+          placeholder='Nom du fournisseur'
+        />
+        <InputField
+          label='Email (optionnel)'
+          value={editEmail}
+          onChangeText={setEditEmail}
+          placeholder='contact@fournisseur.com'
+          autoCapitalize='none'
+          keyboardType='email-address'
+        />
+        <InputField
+          label='Telephone (optionnel)'
+          value={editPhone}
+          onChangeText={setEditPhone}
+          placeholder='+225000000000'
+        />
+        <InputField
+          label='Adresse (optionnel)'
+          value={editAddress}
+          onChangeText={setEditAddress}
+          placeholder='Adresse'
+        />
+
+        <View style={styles.actionRow}>
+          <View style={styles.actionItem}>
+            <AppButton
+              label='Retour'
+              variant='outline'
+              onPress={closeEditModal}
+              disabled={saving}
+            />
+          </View>
+          <View style={styles.actionItem}>
+            <AppButton
+              label={saving ? 'Mise a jour...' : 'Mettre a jour'}
+              onPress={() => {
+                void handleUpdateProvider();
+              }}
+              disabled={saving}
+            />
+          </View>
+        </View>
+      </FormModal>
     </View>
   );
 }
@@ -248,6 +357,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 4,
+  },
+  actionsWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
   },
   providerName: {
     ...typography.bodyMedium,

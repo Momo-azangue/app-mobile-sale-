@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
-import { createClient, deleteClient, listClients } from '../api/services';
+import { createClient, deleteClient, listClients, updateClient } from '../api/services';
 import { getErrorMessage } from '../api/errors';
 import type { ClientResponseDTO } from '../types/api';
 import { colors } from '../theme/tokens';
@@ -30,10 +30,15 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
   const [error, setError] = useState<string | null>(null);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [editingClientId, setEditingClientId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPhone, setEditPhone] = useState('');
 
   const loadClients = useCallback(async () => {
     setLoading(true);
@@ -69,6 +74,14 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
   const closeCreateModal = () => {
     setShowCreateForm(false);
     resetForm();
+  };
+
+  const closeEditModal = () => {
+    setShowEditForm(false);
+    setEditingClientId(null);
+    setEditName('');
+    setEditEmail('');
+    setEditPhone('');
   };
 
   const handleCreateClient = async () => {
@@ -115,6 +128,41 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
     ]);
   };
 
+  const openEditModal = (client: ClientResponseDTO) => {
+    setEditingClientId(client.id);
+    setEditName(client.name);
+    setEditEmail(client.email ?? '');
+    setEditPhone(client.phone ?? '');
+    setShowEditForm(true);
+  };
+
+  const handleUpdateClient = async () => {
+    if (!editingClientId) {
+      return;
+    }
+    if (!editName.trim()) {
+      Alert.alert('Validation', 'Le nom est obligatoire.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await updateClient(editingClientId, {
+        name: editName.trim(),
+        email: editEmail.trim() || undefined,
+        phone: editPhone.trim() || undefined,
+      });
+
+      closeEditModal();
+      await loadClients();
+      onClientChanged();
+    } catch (updateError) {
+      Alert.alert('Erreur', getErrorMessage(updateError));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return <LoadingState message='Chargement clients...' />;
   }
@@ -142,9 +190,14 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
               <AppCard key={client.id} style={styles.clientCard}>
                 <View style={styles.clientHeader}>
                   <Text style={styles.clientName}>{client.name}</Text>
-                  <Pressable onPress={() => handleDeleteClient(client)}>
-                    <Feather name='trash-2' size={18} color={colors.danger600} />
-                  </Pressable>
+                  <View style={styles.actionsWrap}>
+                    <Pressable onPress={() => openEditModal(client)}>
+                      <Feather name='edit-2' size={18} color={colors.neutral600} />
+                    </Pressable>
+                    <Pressable onPress={() => handleDeleteClient(client)}>
+                      <Feather name='trash-2' size={18} color={colors.danger600} />
+                    </Pressable>
+                  </View>
                 </View>
 
                 <Text style={styles.clientMeta}>{client.email || '-'}</Text>
@@ -206,6 +259,53 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
           </View>
         </View>
       </FormModal>
+
+      <FormModal
+        visible={showEditForm}
+        title='Modifier client'
+        onClose={closeEditModal}
+      >
+        <InputField
+          label='Nom'
+          value={editName}
+          onChangeText={setEditName}
+          placeholder='Nom'
+        />
+        <InputField
+          label='Email (optionnel)'
+          value={editEmail}
+          onChangeText={setEditEmail}
+          placeholder='Email (optionnel)'
+          keyboardType='email-address'
+          autoCapitalize='none'
+        />
+        <InputField
+          label='Telephone (optionnel)'
+          value={editPhone}
+          onChangeText={setEditPhone}
+          placeholder='Telephone ex: +22501234567'
+        />
+
+        <View style={styles.actionRow}>
+          <View style={styles.actionItem}>
+            <AppButton
+              label='Retour'
+              variant='outline'
+              onPress={closeEditModal}
+              disabled={saving}
+            />
+          </View>
+          <View style={styles.actionItem}>
+            <AppButton
+              label={saving ? 'Mise a jour...' : 'Mettre a jour'}
+              onPress={() => {
+                void handleUpdateClient();
+              }}
+              disabled={saving}
+            />
+          </View>
+        </View>
+      </FormModal>
     </View>
   );
 }
@@ -235,6 +335,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  actionsWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
   },
   clientName: {
     ...typography.bodyMedium,
