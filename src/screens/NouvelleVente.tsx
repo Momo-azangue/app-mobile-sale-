@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { createSale, listClients, listProducts } from '../api/services';
 import { getErrorMessage } from '../api/errors';
@@ -14,6 +14,7 @@ import { AppButton } from '../components/common/AppButton';
 import { AppCard } from '../components/common/AppCard';
 import { ChipGroup, type ChipOption } from '../components/common/ChipGroup';
 import { InputField } from '../components/common/InputField';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface NouvelleVenteProps {
   onBack: () => void;
@@ -52,8 +53,10 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
     { id: nextLineId(), productId: '', quantity: '1', priceAtSale: '' },
   ]);
 
-  const loadReferences = useCallback(async () => {
-    setLoading(true);
+  const loadReferences = useCallback(async (showLoader: boolean = true) => {
+    if (showLoader) {
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -72,8 +75,9 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   }, [clientId]);
 
   useEffect(() => {
-    void loadReferences();
+    void loadReferences(true);
   }, [loadReferences, refreshSignal]);
+  const { refreshing, onRefresh } = usePullToRefresh(() => loadReferences(false));
 
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const clientOptions = useMemo<ChipOption[]>(
@@ -202,7 +206,13 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary600} />
+      }
+    >
       <Pressable onPress={onBack} style={styles.backButton}>
         <Text style={styles.backLabel}>Retour</Text>
       </Pressable>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { listClients, listInvoices } from '../api/services';
@@ -12,6 +12,7 @@ import { KPICard } from '../components/common/KPICard';
 import { LoadingState } from '../components/common/LoadingState';
 import { ErrorState } from '../components/common/ErrorState';
 import { ScreenHeader } from '../components/common/ScreenHeader';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface DashboardScreenProps {
   refreshSignal: number;
@@ -73,8 +74,10 @@ export function DashboardScreen({ refreshSignal }: DashboardScreenProps) {
   const [invoices, setInvoices] = useState<InvoiceResponseDTO[]>([]);
   const [clientsCount, setClientsCount] = useState(0);
 
-  const loadDashboard = useCallback(async () => {
-    setLoading(true);
+  const loadDashboard = useCallback(async (showLoader: boolean = true) => {
+    if (showLoader) {
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -89,8 +92,9 @@ export function DashboardScreen({ refreshSignal }: DashboardScreenProps) {
   }, []);
 
   useEffect(() => {
-    void loadDashboard();
+    void loadDashboard(true);
   }, [loadDashboard, refreshSignal]);
+  const { refreshing, onRefresh } = usePullToRefresh(() => loadDashboard(false));
 
   const kpis = useMemo(() => {
     const today = new Date();
@@ -138,7 +142,13 @@ export function DashboardScreen({ refreshSignal }: DashboardScreenProps) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary600} />
+      }
+    >
       <ScreenHeader title='Dashboard' subtitle='Vue business en temps reel' />
 
       <View style={styles.kpiGrid}>

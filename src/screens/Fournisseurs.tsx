@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { createProvider, deleteProvider, listProviders, updateProvider } from '../api/services';
@@ -17,6 +17,7 @@ import { InputField } from '../components/common/InputField';
 import { LoadingState } from '../components/common/LoadingState';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface FournisseursScreenProps {
   refreshSignal: number;
@@ -41,8 +42,10 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
   const [editPhone, setEditPhone] = useState('');
   const [editAddress, setEditAddress] = useState('');
 
-  const loadProviders = useCallback(async () => {
-    setLoading(true);
+  const loadProviders = useCallback(async (showLoader: boolean = true) => {
+    if (showLoader) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const fetched = await listProviders();
@@ -55,8 +58,9 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
   }, []);
 
   useEffect(() => {
-    void loadProviders();
+    void loadProviders(true);
   }, [loadProviders, refreshSignal]);
+  const { refreshing, onRefresh } = usePullToRefresh(() => loadProviders(false));
 
   const filteredProviders = useMemo(() => {
     const lower = searchTerm.toLowerCase();
@@ -175,7 +179,13 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
 
   return (
     <View style={styles.wrapper}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary600} />
+        }
+      >
         <ScreenHeader title='Fournisseurs' subtitle='Suivi des fournisseurs et coordonnees' />
 
         <SearchField

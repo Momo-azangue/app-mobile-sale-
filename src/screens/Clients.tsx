@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { createClient, deleteClient, listClients, updateClient } from '../api/services';
@@ -17,6 +17,7 @@ import { ScreenHeader } from '../components/common/ScreenHeader';
 import { AppButton } from '../components/common/AppButton';
 import { AppCard } from '../components/common/AppCard';
 import { InputField } from '../components/common/InputField';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface ClientsScreenProps {
   refreshSignal: number;
@@ -40,8 +41,10 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
 
-  const loadClients = useCallback(async () => {
-    setLoading(true);
+  const loadClients = useCallback(async (showLoader: boolean = true) => {
+    if (showLoader) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const fetched = await listClients();
@@ -54,8 +57,9 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
   }, []);
 
   useEffect(() => {
-    void loadClients();
+    void loadClients(true);
   }, [loadClients, refreshSignal]);
+  const { refreshing, onRefresh } = usePullToRefresh(() => loadClients(false));
 
   const filteredClients = useMemo(() => {
     const lower = searchTerm.toLowerCase();
@@ -173,7 +177,13 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
 
   return (
     <View style={styles.wrapper}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary600} />
+        }
+      >
         <ScreenHeader title='Clients' subtitle='Gestion de la base clients' />
 
         <SearchField

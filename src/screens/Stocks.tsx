@@ -1,5 +1,5 @@
 import { ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import {
@@ -32,6 +32,7 @@ import { LoadingState } from '../components/common/LoadingState';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
 import { SegmentedControl } from '../components/common/SegmentedControl';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface StocksScreenProps {
   refreshSignal: number;
@@ -135,8 +136,10 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
   const [movementSource, setMovementSource] = useState<MovementSource | ''>('');
   const [movementReason, setMovementReason] = useState('');
 
-  const loadStockData = useCallback(async () => {
-    setLoading(true);
+  const loadStockData = useCallback(async (showLoader: boolean = true) => {
+    if (showLoader) {
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -156,8 +159,9 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
   }, []);
 
   useEffect(() => {
-    void loadStockData();
+    void loadStockData(true);
   }, [loadStockData, refreshSignal]);
+  const { refreshing, onRefresh } = usePullToRefresh(() => loadStockData(false));
 
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
 
@@ -332,7 +336,13 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
 
   return (
     <View style={styles.wrapper}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary600} />
+        }
+      >
         <ScreenHeader title='Gestion de stock' subtitle='Produits et mouvements' />
 
         <SegmentedControl

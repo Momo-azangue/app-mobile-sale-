@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { inviteUserToTenant, listInvitations } from '../api/services';
 import { getErrorMessage } from '../api/errors';
@@ -17,6 +17,7 @@ import { InputField } from '../components/common/InputField';
 import { LoadingState } from '../components/common/LoadingState';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SegmentedControl, type SegmentedOption } from '../components/common/SegmentedControl';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface InvitationsScreenProps {
   refreshSignal: number;
@@ -48,8 +49,10 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
     []
   );
 
-  const loadInvitations = useCallback(async () => {
-    setLoading(true);
+  const loadInvitations = useCallback(async (showLoader: boolean = true) => {
+    if (showLoader) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const fetched = await listInvitations();
@@ -65,8 +68,9 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
     if (!session?.tenantId) {
       return;
     }
-    void loadInvitations();
+    void loadInvitations(true);
   }, [loadInvitations, refreshSignal, session?.tenantId]);
+  const { refreshing, onRefresh } = usePullToRefresh(() => loadInvitations(false));
 
   if (!session?.tenantId) {
     return (
@@ -120,7 +124,13 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
 
   return (
     <View style={styles.wrapper}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary600} />
+        }
+      >
         <ScreenHeader title='Invitations' subtitle='Inviter et suivre les utilisateurs de la boutique' />
 
         {invitations.length === 0 ? (

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { createCommerceSettings, listCommerceSettings } from '../api/services';
@@ -12,6 +12,7 @@ import { ScreenHeader } from '../components/common/ScreenHeader';
 import { AppButton } from '../components/common/AppButton';
 import { AppCard } from '../components/common/AppCard';
 import { InputField } from '../components/common/InputField';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface ParametresScreenProps {
   refreshSignal: number;
@@ -31,8 +32,10 @@ export function ParametresScreen({
   const [storeName, setStoreName] = useState('');
   const [currency, setCurrency] = useState('EUR');
 
-  const loadSettings = useCallback(async () => {
-    setLoading(true);
+  const loadSettings = useCallback(async (showLoader: boolean = true) => {
+    if (showLoader) {
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -50,8 +53,9 @@ export function ParametresScreen({
   }, []);
 
   useEffect(() => {
-    void loadSettings();
+    void loadSettings(true);
   }, [loadSettings, refreshSignal]);
+  const { refreshing, onRefresh } = usePullToRefresh(() => loadSettings(false));
 
   const handleSave = async () => {
     if (!storeName.trim()) {
@@ -104,7 +108,13 @@ export function ParametresScreen({
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary600} />
+      }
+    >
       <ScreenHeader title='Parametres' subtitle='Configuration boutique et session' />
 
       <AppCard style={styles.card}>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { listInvoices, listSales } from '../api/services';
@@ -15,6 +15,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
 import { ChipGroup, type ChipOption } from '../components/common/ChipGroup';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface VentesScreenProps {
   onCreateNew: () => void;
@@ -64,8 +65,10 @@ export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) 
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<'all' | InvoiceStatus>('all');
 
-  const loadSales = useCallback(async () => {
-    setLoading(true);
+  const loadSales = useCallback(async (showLoader: boolean = true) => {
+    if (showLoader) {
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -80,8 +83,9 @@ export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) 
   }, []);
 
   useEffect(() => {
-    void loadSales();
+    void loadSales(true);
   }, [loadSales, refreshSignal]);
+  const { refreshing, onRefresh } = usePullToRefresh(() => loadSales(false));
 
   const salesCards = useMemo(() => toSaleCards(sales, invoices), [sales, invoices]);
 
@@ -113,7 +117,12 @@ export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) 
 
   return (
     <View style={styles.wrapper}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary600} />
+        }
+      >
         <ScreenHeader title='Ventes' subtitle='Historique des ventes et suivi facturation' />
 
         <SearchField

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
@@ -36,6 +36,7 @@ import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
 import { SegmentedControl, type SegmentedOption } from '../components/common/SegmentedControl';
 import { StatusBadge } from '../components/common/StatusBadge';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface FacturesScreenProps {
   refreshSignal: number;
@@ -81,8 +82,10 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (showLoader: boolean = true) => {
+    if (showLoader) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const [fetchedInvoices, fetchedSales] = await Promise.all([listInvoices(), listSales()]);
@@ -96,8 +99,9 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
   }, []);
 
   useEffect(() => {
-    void loadData();
+    void loadData(true);
   }, [loadData, refreshSignal]);
+  const { refreshing, onRefresh } = usePullToRefresh(() => loadData(false));
 
   const statusOptions = useMemo<ChipOption[]>(
     () => [
@@ -301,7 +305,13 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
 
   return (
     <View style={styles.wrapper}>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary600} />
+        }
+      >
         <ScreenHeader title='Factures' subtitle='Creation, paiements et PDF' />
 
         <View style={styles.topActions}>

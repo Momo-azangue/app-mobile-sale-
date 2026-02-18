@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { StatusBar, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState, StatusBar, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import {
   Inter_400Regular,
@@ -30,6 +30,9 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { colors } from './src/theme/tokens';
 import { type NavigationTab } from './src/navigation/tabs';
 
+const AUTO_REFRESH_TABS: NavigationTab[] = ['dashboard', 'ventes', 'stocks', 'factures'];
+const AUTO_REFRESH_INTERVAL_MS = 3600_000;
+
 function AppShell() {
   const { session, isBooting, logout } = useAuth();
   const { width } = useWindowDimensions();
@@ -38,8 +41,53 @@ function AppShell() {
   const [showNewSale, setShowNewSale] = useState(false);
   const [showMoreDrawer, setShowMoreDrawer] = useState(false);
   const [refreshSignal, setRefreshSignal] = useState(0);
+  const appStateRef = useRef(AppState.currentState);
 
-  const bumpRefresh = () => setRefreshSignal((value) => value + 1);
+  const bumpRefresh = useCallback(() => {
+    setRefreshSignal((value) => value + 1);
+  }, []);
+
+  const isAutoRefreshEnabled = Boolean(
+    session && !showNewSale && AUTO_REFRESH_TABS.includes(activeTab),
+  );
+
+  useEffect(() => {
+    if (!isAutoRefreshEnabled) {
+      return;
+    }
+
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const previousState = appStateRef.current;
+      appStateRef.current = nextState;
+
+      if (
+        (previousState === 'inactive' || previousState === 'background') &&
+        nextState === 'active'
+      ) {
+        bumpRefresh();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [bumpRefresh, isAutoRefreshEnabled]);
+
+  useEffect(() => {
+    if (!isAutoRefreshEnabled) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      if (AppState.currentState === 'active') {
+        bumpRefresh();
+      }
+    }, AUTO_REFRESH_INTERVAL_MS);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [bumpRefresh, isAutoRefreshEnabled]);
 
   const content = useMemo(() => {
     if (!session) {
