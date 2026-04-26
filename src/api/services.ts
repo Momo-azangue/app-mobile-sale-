@@ -4,27 +4,42 @@ import type {
   AuthResponseDTO,
   CategoryRequestDTO,
   CategoryResponseDTO,
+  ChangePlanRequestDTO,
   ClientRequestDTO,
   ClientResponseDTO,
   CommerceSettingsRequestDTO,
   CommerceSettingsResponseDTO,
+  ForgotPasswordRequestDTO,
   InviteUserRequestDTO,
   InvitationResponseDTO,
   InvoiceCreateRequestDTO,
   InvoicePaymentRequestDTO,
   InvoiceResponseDTO,
+  PagedResponse,
   ProviderRequestDTO,
   ProviderResponseDTO,
   ProductRequestDTO,
   ProductResponseDTO,
+  ProductVariantRequestDTO,
+  ProductVariantResponseDTO,
   RegisterRequestDTO,
   SaleRequestDTO,
   SaleResponseDTO,
   StockMovementRequestDTO,
   StockMovementResponseDTO,
   SubscriptionPlanDTO,
+  TenantRequestDTO,
+  TenantResponseDTO,
+  VerifyEmailConfirmRequestDTO,
+  VerifyEmailRequestDTO,
   UserResponseDTO,
+  ResetPasswordRequestDTO,
 } from '../types/api';
+
+// Taille de page utilisée par les helpers non paginés (listInvoices, listSales,
+// listProducts) pour préserver le comportement « tout charger ». Au-delà de
+// ce seuil, basculer sur les variantes *Page() pour de la vraie pagination.
+const DEFAULT_BULK_PAGE_SIZE = 200;
 
 export async function login(email: string, password: string): Promise<AuthResponseDTO> {
   const { data } = await publicApi.post<AuthResponseDTO>('/api/v1/auth/login', {
@@ -41,6 +56,26 @@ export async function refresh(refreshToken: string): Promise<AuthResponseDTO> {
   return data;
 }
 
+export async function logout(refreshToken: string): Promise<void> {
+  await publicApi.post('/api/v1/auth/logout', { refreshToken });
+}
+
+export async function requestPasswordReset(payload: ForgotPasswordRequestDTO): Promise<void> {
+  await publicApi.post('/api/v1/auth/forgot-password', payload);
+}
+
+export async function resetPassword(payload: ResetPasswordRequestDTO): Promise<void> {
+  await publicApi.post('/api/v1/auth/reset-password', payload);
+}
+
+export async function requestEmailVerification(payload: VerifyEmailRequestDTO): Promise<void> {
+  await publicApi.post('/api/v1/auth/verify-email/request', payload);
+}
+
+export async function confirmEmailVerification(payload: VerifyEmailConfirmRequestDTO): Promise<void> {
+  await publicApi.post('/api/v1/auth/verify-email/confirm', payload);
+}
+
 export async function registerAdminAndTenant(payload: RegisterRequestDTO): Promise<UserResponseDTO> {
   const { data } = await publicApi.post<UserResponseDTO>('/api/v1/users/register', payload);
   return data;
@@ -55,9 +90,21 @@ export async function listPlans(): Promise<SubscriptionPlanDTO[]> {
 
 export async function listClients(): Promise<ClientResponseDTO[]> {
   return cachedList('clients', async () => {
-    const { data } = await api.get<ClientResponseDTO[]>('/api/v1/clients');
-    return data;
+    const { data } = await api.get<PagedResponse<ClientResponseDTO>>('/api/v1/clients', {
+      params: { page: 0, size: DEFAULT_BULK_PAGE_SIZE },
+    });
+    return data.content;
   });
+}
+
+export async function listClientsPage(
+  page: number,
+  size: number
+): Promise<PagedResponse<ClientResponseDTO>> {
+  const { data } = await api.get<PagedResponse<ClientResponseDTO>>('/api/v1/clients', {
+    params: { page, size },
+  });
+  return data;
 }
 
 export async function createClient(payload: ClientRequestDTO): Promise<ClientResponseDTO> {
@@ -145,9 +192,72 @@ export async function acceptInvitation(token: string, password: string): Promise
 
 export async function listProducts(): Promise<ProductResponseDTO[]> {
   return cachedList('products', async () => {
-    const { data } = await api.get<ProductResponseDTO[]>('/api/v1/products');
-    return data;
+    const { data } = await api.get<PagedResponse<ProductResponseDTO>>('/api/v1/products', {
+      params: { page: 0, size: DEFAULT_BULK_PAGE_SIZE },
+    });
+    return data.content;
   });
+}
+
+export async function listProductsPage(
+  page: number,
+  size: number
+): Promise<PagedResponse<ProductResponseDTO>> {
+  const { data } = await api.get<PagedResponse<ProductResponseDTO>>('/api/v1/products', {
+    params: { page, size },
+  });
+  return data;
+}
+
+// ── Product Variants (nested under /products/{productId}/variants) ────────────
+
+export async function listProductVariants(
+  productId: string
+): Promise<ProductVariantResponseDTO[]> {
+  const { data } = await api.get<ProductVariantResponseDTO[]>(
+    `/api/v1/products/${productId}/variants`
+  );
+  return data;
+}
+
+export async function getProductVariant(
+  productId: string,
+  variantId: string
+): Promise<ProductVariantResponseDTO> {
+  const { data } = await api.get<ProductVariantResponseDTO>(
+    `/api/v1/products/${productId}/variants/${variantId}`
+  );
+  return data;
+}
+
+export async function createProductVariant(
+  productId: string,
+  payload: ProductVariantRequestDTO
+): Promise<ProductVariantResponseDTO> {
+  const { data } = await api.post<ProductVariantResponseDTO>(
+    `/api/v1/products/${productId}/variants`,
+    payload
+  );
+  return data;
+}
+
+export async function updateProductVariant(
+  productId: string,
+  variantId: string,
+  payload: ProductVariantRequestDTO
+): Promise<ProductVariantResponseDTO> {
+  const { data } = await api.put<ProductVariantResponseDTO>(
+    `/api/v1/products/${productId}/variants/${variantId}`,
+    payload
+  );
+  return data;
+}
+
+export async function deleteProductVariant(
+  productId: string,
+  variantId: string
+): Promise<void> {
+  await api.delete(`/api/v1/products/${productId}/variants/${variantId}`);
 }
 
 export async function createProduct(payload: ProductRequestDTO): Promise<ProductResponseDTO> {
@@ -174,6 +284,15 @@ export async function listStockMovements(): Promise<StockMovementResponseDTO[]> 
   });
 }
 
+export async function listStockMovementsByProduct(
+  productId: string
+): Promise<StockMovementResponseDTO[]> {
+  const { data } = await api.get<StockMovementResponseDTO[]>(
+    `/api/v1/stock-movements/product/${productId}`
+  );
+  return data;
+}
+
 export async function createStockMovement(
   payload: StockMovementRequestDTO
 ): Promise<StockMovementResponseDTO> {
@@ -183,9 +302,21 @@ export async function createStockMovement(
 
 export async function listSales(): Promise<SaleResponseDTO[]> {
   return cachedList('sales', async () => {
-    const { data } = await api.get<SaleResponseDTO[]>('/api/v1/sales');
-    return data;
+    const { data } = await api.get<PagedResponse<SaleResponseDTO>>('/api/v1/sales', {
+      params: { page: 0, size: DEFAULT_BULK_PAGE_SIZE },
+    });
+    return data.content;
   });
+}
+
+export async function listSalesPage(
+  page: number,
+  size: number
+): Promise<PagedResponse<SaleResponseDTO>> {
+  const { data } = await api.get<PagedResponse<SaleResponseDTO>>('/api/v1/sales', {
+    params: { page, size },
+  });
+  return data;
 }
 
 export async function createSale(payload: SaleRequestDTO): Promise<SaleResponseDTO> {
@@ -195,9 +326,21 @@ export async function createSale(payload: SaleRequestDTO): Promise<SaleResponseD
 
 export async function listInvoices(): Promise<InvoiceResponseDTO[]> {
   return cachedList('invoices', async () => {
-    const { data } = await api.get<InvoiceResponseDTO[]>('/api/v1/invoices');
-    return data;
+    const { data } = await api.get<PagedResponse<InvoiceResponseDTO>>('/api/v1/invoices', {
+      params: { page: 0, size: DEFAULT_BULK_PAGE_SIZE },
+    });
+    return data.content;
   });
+}
+
+export async function listInvoicesPage(
+  page: number,
+  size: number
+): Promise<PagedResponse<InvoiceResponseDTO>> {
+  const { data } = await api.get<PagedResponse<InvoiceResponseDTO>>('/api/v1/invoices', {
+    params: { page, size },
+  });
+  return data;
 }
 
 export async function createInvoice(payload: InvoiceCreateRequestDTO): Promise<InvoiceResponseDTO> {
@@ -228,6 +371,16 @@ export async function downloadInvoicePdf(invoiceId: string): Promise<ArrayBuffer
   return data;
 }
 
+export async function previewInvoicePdf(saleId: string): Promise<ArrayBuffer> {
+  const { data } = await api.get<ArrayBuffer>(`/api/v1/invoices/preview/${saleId}`, {
+    responseType: 'arraybuffer',
+    headers: {
+      Accept: 'application/pdf',
+    },
+  });
+  return data;
+}
+
 export async function listCommerceSettings(): Promise<CommerceSettingsResponseDTO[]> {
   return cachedList('commerce-settings', async () => {
     const { data } = await api.get<CommerceSettingsResponseDTO[]>('/api/v1/commerce-settings');
@@ -239,5 +392,28 @@ export async function createCommerceSettings(
   payload: CommerceSettingsRequestDTO
 ): Promise<CommerceSettingsResponseDTO> {
   const { data } = await api.post<CommerceSettingsResponseDTO>('/api/v1/commerce-settings', payload);
+  return data;
+}
+
+// ── Tenant self-service (current tenant from JWT) ─────────────────────────────
+
+export async function getMyTenant(): Promise<TenantResponseDTO> {
+  const { data } = await api.get<TenantResponseDTO>('/api/v1/tenants/me');
+  return data;
+}
+
+export async function updateMyTenant(payload: TenantRequestDTO): Promise<TenantResponseDTO> {
+  const { data } = await api.put<TenantResponseDTO>('/api/v1/tenants/me', payload);
+  return data;
+}
+
+export async function listMyTenantUsers(): Promise<UserResponseDTO[]> {
+  const { data } = await api.get<UserResponseDTO[]>('/api/v1/tenants/me/users');
+  return data;
+}
+
+export async function changeMyTenantPlan(planId: string): Promise<TenantResponseDTO> {
+  const payload: ChangePlanRequestDTO = { planId };
+  const { data } = await api.post<TenantResponseDTO>('/api/v1/tenants/me/plan', payload);
   return data;
 }

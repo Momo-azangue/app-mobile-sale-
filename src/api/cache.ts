@@ -26,6 +26,19 @@ async function readCache<T>(key: string): Promise<T | null> {
   }
 }
 
+async function readArrayCache<T>(key: string): Promise<T[] | null> {
+  const value = await readCache<T[]>(key);
+  // Garde-fou : un build précédent a pu stocker un PagedResponse au lieu
+  // d'un array (cas du bug listClients/listInvoices/etc.). Dans ce cas on
+  // invalide silencieusement le cache plutôt que de remonter un objet
+  // qui fera planter `.filter()` / `.map()` côté écran.
+  if (value !== null && !Array.isArray(value)) {
+    await AsyncStorage.removeItem(toCacheKey(key));
+    return null;
+  }
+  return value;
+}
+
 async function writeCache<T>(key: string, value: T): Promise<void> {
   const payload: CacheEnvelope<T> = {
     value,
@@ -40,7 +53,7 @@ export async function cachedList<T>(key: string, fetcher: () => Promise<T[]>): P
     await writeCache(key, fresh);
     return fresh;
   } catch (error) {
-    const cached = await readCache<T[]>(key);
+    const cached = await readArrayCache<T>(key);
     if (cached) {
       return cached;
     }

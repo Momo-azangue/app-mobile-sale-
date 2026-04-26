@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { PropsWithChildren } from 'react';
 
 import { clearSession, loadSession, persistSession } from '../api/storage';
-import { login, refresh, registerAdminAndTenant } from '../api/services';
+import { login, logout as logoutRequest, refresh, registerAdminAndTenant } from '../api/services';
 import { configureHttpAuth } from '../api/http';
 import type { AuthResponseDTO, RegisterRequestDTO, SessionState } from '../types/api';
 
@@ -82,7 +82,6 @@ export function AuthProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     configureHttpAuth({
       getAccessToken: () => sessionRef.current?.accessToken ?? null,
-      getTenantId: () => sessionRef.current?.tenantId ?? null,
       refreshAccessToken,
       onUnauthorized: () => {
         void resetSession();
@@ -165,6 +164,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [applySession]);
 
   const logout = useCallback(async () => {
+    const refreshToken = sessionRef.current?.refreshToken;
+    // On appelle le backend pour révoquer le refresh token côté serveur, mais
+    // on clear toujours la session locale même si l'appel échoue (offline,
+    // token déjà invalide, etc.) pour éviter de coincer l'utilisateur.
+    if (refreshToken) {
+      try {
+        await logoutRequest(refreshToken);
+      } catch {
+        // ignoré : on déconnecte localement quoi qu'il arrive
+      }
+    }
     await resetSession();
   }, [resetSession]);
 

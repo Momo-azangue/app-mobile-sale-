@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 
 import { listClients, listInvoices } from '../api/services';
 import { getErrorMessage } from '../api/errors';
-import { formatCurrency } from '../utils/format';
+import { useFormatCurrency } from '../context/AppSettingsContext';
 import type { InvoiceResponseDTO } from '../types/api';
 import { colors, radius, shadows } from '../theme/tokens';
 import { typography } from '../theme/typography';
@@ -69,6 +69,7 @@ function buildSalesTrend(invoices: InvoiceResponseDTO[]): DayAggregate[] {
 }
 
 export function DashboardScreen({ refreshSignal }: DashboardScreenProps) {
+  const fmtCurrency = useFormatCurrency();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<InvoiceResponseDTO[]>([]);
@@ -153,10 +154,10 @@ export function DashboardScreen({ refreshSignal }: DashboardScreenProps) {
 
       <View style={styles.kpiGrid}>
         <View style={styles.kpiCell}>
-          <KPICard title='CA du jour' value={formatCurrency(kpis.revenueToday)} icon='dollar-sign' />
+          <KPICard title='CA du jour' value={fmtCurrency(kpis.revenueToday)} icon='dollar-sign' />
         </View>
         <View style={styles.kpiCell}>
-          <KPICard title='Factures ouvertes' value={kpis.openCount} icon='file-text' trend={{ value: formatCurrency(kpis.openAmount), positive: false }} />
+          <KPICard title='Factures ouvertes' value={kpis.openCount} icon='file-text' trend={{ value: fmtCurrency(kpis.openAmount), positive: false }} />
         </View>
         <View style={styles.kpiCell}>
           <KPICard title='Ventes du jour' value={kpis.salesToday} icon='shopping-cart' />

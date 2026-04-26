@@ -4,7 +4,8 @@ import { Feather } from '@expo/vector-icons';
 
 import { listInvoices, listSales } from '../api/services';
 import { getErrorMessage } from '../api/errors';
-import { formatCurrency, formatDate } from '../utils/format';
+import { useFormatCurrency } from '../context/AppSettingsContext';
+import { formatDate } from '../utils/format';
 import type { InvoiceResponseDTO, InvoiceStatus, SaleResponseDTO } from '../types/api';
 import { colors, radius, shadows } from '../theme/tokens';
 import { typography } from '../theme/typography';
@@ -94,6 +95,7 @@ function toSaleCards(sales: SaleResponseDTO[], invoices: InvoiceResponseDTO[]): 
 }
 
 export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) {
+  const fmtCurrency = useFormatCurrency();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sales, setSales] = useState<SaleResponseDTO[]>([]);
@@ -256,7 +258,7 @@ export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) 
                     </View>
 
                     <View style={styles.cardRight}>
-                      <Text style={styles.amount}>{formatCurrency(sale.montantTotal)}</Text>
+                      <Text style={styles.amount}>{fmtCurrency(sale.montantTotal)}</Text>
                       <StatusBadge status={sale.status} />
                     </View>
                   </View>
@@ -292,7 +294,7 @@ export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) 
             </View>
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Montant total</Text>
-              <Text style={styles.detailValue}>{formatCurrency(selectedSale.montantTotal)}</Text>
+              <Text style={styles.detailValue}>{fmtCurrency(selectedSale.montantTotal)}</Text>
             </View>
 
             <Text style={styles.linesTitle}>Lignes produits</Text>
@@ -306,9 +308,9 @@ export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) 
                     <Text style={styles.lineName}>{line.productName ?? line.productId}</Text>
                     <Text style={styles.lineMeta}>Quantite: {line.quantity}</Text>
                     <Text style={styles.lineMeta}>
-                      Prix: {Number.isFinite(line.priceAtSale) ? formatCurrency(line.priceAtSale as number) : '-'}
+                      Prix: {Number.isFinite(line.priceAtSale) ? fmtCurrency(line.priceAtSale as number) : '-'}
                     </Text>
-                    <Text style={styles.lineMeta}>Total: {lineTotal != null ? formatCurrency(lineTotal) : '-'}</Text>
+                    <Text style={styles.lineMeta}>Total: {lineTotal != null ? fmtCurrency(lineTotal) : '-'}</Text>
                   </View>
                 );
               })}

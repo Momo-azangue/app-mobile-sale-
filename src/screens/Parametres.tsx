@@ -2,8 +2,17 @@ import { useCallback, useEffect, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
-import { createCommerceSettings, listCommerceSettings } from '../api/services';
+import {
+  createCommerceSettings,
+  getMyTenant,
+  listCommerceSettings,
+  listMyTenantUsers,
+  requestEmailVerification,
+  updateMyTenant,
+} from '../api/services';
 import { getErrorMessage } from '../api/errors';
+import { useAuth } from '../context/AuthContext';
+import { useAppSettings } from '../context/AppSettingsContext';
 import { colors } from '../theme/tokens';
 import { typography } from '../theme/typography';
 import { LoadingState } from '../components/common/LoadingState';
@@ -13,6 +22,7 @@ import { AppButton } from '../components/common/AppButton';
 import { AppCard } from '../components/common/AppCard';
 import { InputField } from '../components/common/InputField';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
+import type { TenantResponseDTO, UserResponseDTO } from '../types/api';
 
 interface ParametresScreenProps {
   refreshSignal: number;
@@ -25,12 +35,18 @@ export function ParametresScreen({
   onSettingsChanged,
   onLogout,
 }: ParametresScreenProps) {
+  const { session } = useAuth();
+  const { refresh: refreshAppSettings } = useAppSettings();
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [sendingVerification, setSendingVerification] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [storeName, setStoreName] = useState('');
-  const [currency, setCurrency] = useState('EUR');
+  const [currency, setCurrency] = useState('XAF');
+  const [tenant, setTenant] = useState<TenantResponseDTO | null>(null);
+  const [tenantUsers, setTenantUsers] = useState<UserResponseDTO[]>([]);
 
   const loadSettings = useCallback(async (showLoader: boolean = true) => {
     if (showLoader) {
@@ -39,12 +55,25 @@ export function ParametresScreen({
     setError(null);
 
     try {
-      const settings = await listCommerceSettings();
-      if (settings.length > 0) {
-        const latest = settings[settings.length - 1];
-        setStoreName(latest.nom);
-        setCurrency(latest.devise);
+      const [settings, fetchedTenant, fetchedUsers] = await Promise.all([
+        listCommerceSettings(),
+        getMyTenant().catch(() => null),
+        listMyTenantUsers().catch(() => [] as UserResponseDTO[]),
+      ]);
+
+      // Source d'autorité du nom : Tenant.name (saisi à l'inscription).
+      // CommerceSettings.nom devient un fallback legacy.
+      if (fetchedTenant?.name?.trim()) {
+        setStoreName(fetchedTenant.name);
+      } else if (settings.length > 0 && settings[settings.length - 1]?.nom?.trim()) {
+        setStoreName(settings[settings.length - 1].nom);
       }
+      // Devise reste portée par CommerceSettings (entité dédiée aux préférences UI)
+      if (settings.length > 0 && settings[settings.length - 1]?.devise?.trim()) {
+        setCurrency(settings[settings.length - 1].devise);
+      }
+      setTenant(fetchedTenant);
+      setTenantUsers(fetchedUsers);
     } catch (loadError) {
       setError(getErrorMessage(loadError));
     } finally {
@@ -70,11 +99,28 @@ export function ParametresScreen({
 
     setSaving(true);
     try {
+      const trimmedName = storeName.trim();
+      const normalizedCurrency = currency.trim().toUpperCase();
+
+      // 1. Mise à jour du nom de boutique sur le tenant (source d'autorité)
+      if (tenant && trimmedName !== tenant.name) {
+        await updateMyTenant({
+          name: trimmedName,
+          planId: tenant.planId ?? '',
+          subscriptionEndDate: tenant.subscriptionEndDate ?? null,
+          emailContact: tenant.emailContact,
+        });
+      }
+
+      // 2. CommerceSettings reste utilisé pour la devise (et legacy nom pour rétro-compat)
       await createCommerceSettings({
-        nom: storeName.trim(),
-        devise: currency.trim().toUpperCase(),
+        nom: trimmedName,
+        devise: normalizedCurrency,
         facturePDFActive: true,
       });
+
+      // 3. Propage la nouvelle devise/nom à toute l'app (TopBar, Dashboard, etc.)
+      await refreshAppSettings();
 
       Alert.alert('Succes', 'Parametres enregistres.');
       onSettingsChanged();
@@ -97,6 +143,26 @@ export function ParametresScreen({
         },
       },
     ]);
+  };
+
+  const handleSendVerification = async () => {
+    if (!session?.email) {
+      Alert.alert('Session', 'Aucun email de session disponible.');
+      return;
+    }
+
+    setSendingVerification(true);
+    try {
+      await requestEmailVerification({ email: session.email });
+      Alert.alert(
+        'Verification email',
+        'Si le compte en a besoin, un email de verification a ete envoye.',
+      );
+    } catch (verificationError) {
+      Alert.alert('Erreur verification', getErrorMessage(verificationError));
+    } finally {
+      setSendingVerification(false);
+    }
   };
 
   if (loading) {
@@ -153,9 +219,89 @@ export function ParametresScreen({
 
       <AppCard style={styles.card}>
         <View style={styles.sectionHeader}>
-          <Feather name='shield' size={18} color={colors.primary600} />
-          <Text style={styles.sectionTitle}>Session</Text>
+          <Feather name='briefcase' size={18} color={colors.primary600} />
+          <Text style={styles.sectionTitle}>Mon abonnement</Text>
         </View>
+
+        {tenant ? (
+          <>
+            <View style={styles.accountMeta}>
+              <Text style={styles.accountLabel}>Tenant</Text>
+              <Text style={styles.accountValue}>{tenant.name}</Text>
+            </View>
+            {tenant.planId ? (
+              <View style={styles.accountMeta}>
+                <Text style={styles.accountLabel}>Plan</Text>
+                <Text style={styles.accountValue}>{tenant.planId}</Text>
+              </View>
+            ) : null}
+            {tenant.subscriptionEndDate ? (
+              <View style={styles.accountMeta}>
+                <Text style={styles.accountLabel}>Fin d abonnement</Text>
+                <Text style={styles.accountValue}>{tenant.subscriptionEndDate}</Text>
+              </View>
+            ) : null}
+            {tenant.emailContact ? (
+              <View style={styles.accountMeta}>
+                <Text style={styles.accountLabel}>Email contact</Text>
+                <Text style={styles.accountValue}>{tenant.emailContact}</Text>
+              </View>
+            ) : null}
+          </>
+        ) : (
+          <Text style={styles.note}>Informations tenant non disponibles.</Text>
+        )}
+      </AppCard>
+
+      <AppCard style={styles.card}>
+        <View style={styles.sectionHeader}>
+          <Feather name='users' size={18} color={colors.primary600} />
+          <Text style={styles.sectionTitle}>Mes employes ({tenantUsers.length})</Text>
+        </View>
+
+        {tenantUsers.length === 0 ? (
+          <Text style={styles.note}>Aucun employe ou information non disponible.</Text>
+        ) : (
+          tenantUsers.map((u) => (
+            <View key={u.email} style={styles.userRow}>
+              <View style={styles.userRowMain}>
+                <Text style={styles.accountValue}>{u.name ?? u.email}</Text>
+                <Text style={styles.accountLabel}>{u.email}</Text>
+              </View>
+              <Text style={styles.userRowRole}>{u.role}</Text>
+            </View>
+          ))
+        )}
+      </AppCard>
+
+      <AppCard style={styles.card}>
+        <View style={styles.sectionHeader}>
+          <Feather name='shield' size={18} color={colors.primary600} />
+          <Text style={styles.sectionTitle}>Compte et session</Text>
+        </View>
+
+        <View style={styles.accountMeta}>
+          <Text style={styles.accountLabel}>Email</Text>
+          <Text style={styles.accountValue}>{session?.email ?? 'Non disponible'}</Text>
+        </View>
+
+        <View style={styles.accountMeta}>
+          <Text style={styles.accountLabel}>Role</Text>
+          <Text style={styles.accountValue}>{session?.role ?? 'Non disponible'}</Text>
+        </View>
+
+        <Text style={styles.note}>
+          Les nouveaux flux compte du backend sont exposes ici sans changer le parcours existant.
+        </Text>
+
+        <AppButton
+          label={sendingVerification ? 'Envoi verification...' : 'Renvoyer l email de verification'}
+          variant='outline'
+          onPress={() => {
+            void handleSendVerification();
+          }}
+          disabled={sendingVerification || !session?.email}
+        />
 
         <AppButton label='Deconnexion' variant='danger' onPress={handleLogout} />
       </AppCard>
@@ -189,5 +335,33 @@ const styles = StyleSheet.create({
   note: {
     ...typography.caption,
     color: colors.neutral500,
+  },
+  accountMeta: {
+    gap: 2,
+  },
+  accountLabel: {
+    ...typography.captionMedium,
+    color: colors.neutral500,
+    textTransform: 'uppercase',
+  },
+  accountValue: {
+    ...typography.bodyMedium,
+    color: colors.neutral900,
+  },
+  userRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 6,
+  },
+  userRowMain: {
+    flex: 1,
+    gap: 2,
+  },
+  userRowRole: {
+    ...typography.captionMedium,
+    color: colors.primary600,
+    textTransform: 'uppercase',
   },
 });

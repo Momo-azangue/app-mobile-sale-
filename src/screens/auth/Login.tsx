@@ -3,13 +3,16 @@ import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-n
 
 import { useAuth } from '../../context/AuthContext';
 import { getErrorMessage } from '../../api/errors';
-import { listPlans } from '../../api/services';
+import { listPlans, requestPasswordReset } from '../../api/services';
 import { API_BASE_URL } from '../../config/env';
 import { colors, radius, shadows } from '../../theme/tokens';
 import { typography } from '../../theme/typography';
 import type { RegisterRequestDTO, SubscriptionPlanDTO } from '../../types/api';
 import { AppCard } from '../../components/common/AppCard';
+import { AppButton } from '../../components/common/AppButton';
 import type { ChipOption } from '../../components/common/ChipGroup';
+import { FormModal } from '../../components/common/FormModal';
+import { InputField } from '../../components/common/InputField';
 import { SegmentedControl } from '../../components/common/SegmentedControl';
 import { DesktopPromoPanel } from './components/DesktopPromoPanel';
 import { LoginFormSection } from './components/LoginFormSection';
@@ -28,6 +31,7 @@ export function LoginScreen() {
 
   const [mode, setMode] = useState<AuthMode>('login');
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -40,6 +44,11 @@ export function LoginScreen() {
 
   const [plans, setPlans] = useState<SubscriptionPlanDTO[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+  const [forgotPasswordError, setForgotPasswordError] = useState<string | null>(null);
+  const [forgotPasswordNotice, setForgotPasswordNotice] = useState<string | null>(null);
+  const [isSubmittingForgotPassword, setIsSubmittingForgotPassword] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -99,6 +108,7 @@ export function LoginScreen() {
 
     try {
       setError(null);
+      setNotice(null);
       await loginWithPassword(email.trim(), password);
     } catch (submitError) {
       setError(getErrorMessage(submitError));
@@ -127,9 +137,52 @@ export function LoginScreen() {
 
     try {
       setError(null);
+      setNotice(null);
       await registerAndLogin(payload);
+      setNotice('Compte cree. Si le backend exige une verification email, un message de confirmation a ete envoye.');
     } catch (submitError) {
       setError(getErrorMessage(submitError));
+    }
+  };
+
+  const openForgotPasswordModal = () => {
+    setForgotPasswordEmail(email.trim());
+    setForgotPasswordError(null);
+    setForgotPasswordNotice(null);
+    setShowForgotPasswordModal(true);
+  };
+
+  const closeForgotPasswordModal = () => {
+    if (isSubmittingForgotPassword) {
+      return;
+    }
+    setShowForgotPasswordModal(false);
+    setForgotPasswordError(null);
+    setForgotPasswordNotice(null);
+  };
+
+  const onForgotPasswordSubmit = async () => {
+    if (!forgotPasswordEmail.trim()) {
+      setForgotPasswordError('L email est obligatoire.');
+      return;
+    }
+
+    setIsSubmittingForgotPassword(true);
+    setForgotPasswordError(null);
+    setForgotPasswordNotice(null);
+
+    try {
+      await requestPasswordReset({ email: forgotPasswordEmail.trim() });
+
+      const successMessage =
+        'Si un compte existe pour cet email, un lien de reinitialisation a ete envoye.';
+      setForgotPasswordNotice(successMessage);
+      setNotice(successMessage);
+      setEmail(forgotPasswordEmail.trim());
+    } catch (submitError) {
+      setForgotPasswordError(getErrorMessage(submitError));
+    } finally {
+      setIsSubmittingForgotPassword(false);
     }
   };
 
@@ -166,8 +219,10 @@ export function LoginScreen() {
                   isLoading={isAuthenticating}
                   canSubmit={canLogin}
                   error={error}
+                  notice={notice}
                   onEmailChange={setEmail}
                   onPasswordChange={setPassword}
+                  onForgotPassword={openForgotPasswordModal}
                   onSubmit={() => {
                     void onLoginSubmit();
                   }}
@@ -200,6 +255,48 @@ export function LoginScreen() {
           </AppCard>
         </View>
       </ScrollView>
+
+      <FormModal
+        visible={showForgotPasswordModal}
+        title='Mot de passe oublie'
+        onClose={closeForgotPasswordModal}
+      >
+        <InputField
+          label='Email'
+          value={forgotPasswordEmail}
+          onChangeText={setForgotPasswordEmail}
+          placeholder='admin@boutique.com'
+          autoCapitalize='none'
+          keyboardType='email-address'
+        />
+
+        <Text style={styles.modalHint}>
+          Le backend enverra un lien si le compte existe. Aucun detail sensible n est expose.
+        </Text>
+
+        {forgotPasswordError ? <Text style={styles.modalError}>{forgotPasswordError}</Text> : null}
+        {forgotPasswordNotice ? <Text style={styles.modalNotice}>{forgotPasswordNotice}</Text> : null}
+
+        <View style={styles.modalActions}>
+          <View style={styles.modalActionItem}>
+            <AppButton
+              label='Fermer'
+              variant='outline'
+              onPress={closeForgotPasswordModal}
+              disabled={isSubmittingForgotPassword}
+            />
+          </View>
+          <View style={styles.modalActionItem}>
+            <AppButton
+              label='Envoyer le lien'
+              onPress={() => {
+                void onForgotPasswordSubmit();
+              }}
+              loading={isSubmittingForgotPassword}
+            />
+          </View>
+        </View>
+      </FormModal>
     </View>
   );
 }
@@ -261,5 +358,25 @@ const styles = StyleSheet.create({
     marginTop: 12,
     color: colors.neutral500,
     ...typography.caption,
+  },
+  modalHint: {
+    ...typography.caption,
+    color: colors.neutral500,
+  },
+  modalError: {
+    ...typography.label,
+    color: colors.danger600,
+  },
+  modalNotice: {
+    ...typography.label,
+    color: colors.neutral600,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 6,
+  },
+  modalActionItem: {
+    flex: 1,
   },
 });

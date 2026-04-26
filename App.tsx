@@ -27,60 +27,32 @@ import { FacturesScreen } from './src/screens/Factures';
 import { InvitationsScreen } from './src/screens/Invitations';
 import { LoginScreen } from './src/screens/auth/Login';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
+import { AppSettingsProvider, useAppSettings } from './src/context/AppSettingsContext';
 import { colors } from './src/theme/tokens';
 import { type NavigationTab } from './src/navigation/tabs';
-import { listCommerceSettings } from './src/api/services';
 
 const AUTO_REFRESH_TABS: NavigationTab[] = ['dashboard', 'ventes', 'stocks', 'factures'];
 const AUTO_REFRESH_INTERVAL_MS = 3600_000;
 
 function AppShell() {
   const { session, isBooting, logout } = useAuth();
+  const { shopName, refresh: refreshAppSettings } = useAppSettings();
   const { width } = useWindowDimensions();
 
   const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
   const [showNewSale, setShowNewSale] = useState(false);
   const [showMoreDrawer, setShowMoreDrawer] = useState(false);
   const [refreshSignal, setRefreshSignal] = useState(0);
-  const [shopName, setShopName] = useState('Ma boutique');
   const appStateRef = useRef(AppState.currentState);
 
   const bumpRefresh = useCallback(() => {
     setRefreshSignal((value) => value + 1);
-  }, []);
+    void refreshAppSettings();
+  }, [refreshAppSettings]);
 
   const isAutoRefreshEnabled = Boolean(
     session && !showNewSale && AUTO_REFRESH_TABS.includes(activeTab),
   );
-
-  useEffect(() => {
-    let mounted = true;
-
-    if (!session) {
-      setShopName('Ma boutique');
-      return () => {
-        mounted = false;
-      };
-    }
-
-    (async () => {
-      try {
-        const settings = await listCommerceSettings();
-        const resolvedName = settings[0]?.nom?.trim();
-        if (mounted) {
-          setShopName(resolvedName && resolvedName.length > 0 ? resolvedName : 'Ma boutique');
-        }
-      } catch {
-        if (mounted) {
-          setShopName('Ma boutique');
-        }
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, [refreshSignal, session]);
 
   useEffect(() => {
     if (!isAutoRefreshEnabled) {
@@ -144,7 +116,7 @@ function AppShell() {
       case 'ventes':
         return <VentesScreen refreshSignal={refreshSignal} onCreateNew={() => setShowNewSale(true)} />;
       case 'stocks':
-        return <StocksScreen refreshSignal={refreshSignal} />;
+        return <StocksScreen refreshSignal={refreshSignal} onProductChanged={bumpRefresh} />;
       case 'clients':
         return <ClientsScreen refreshSignal={refreshSignal} onClientChanged={bumpRefresh} />;
       case 'fournisseurs':
@@ -166,7 +138,7 @@ function AppShell() {
       default:
         return <DashboardScreen refreshSignal={refreshSignal} />;
     }
-  }, [activeTab, logout, refreshSignal, session, showNewSale]);
+  }, [activeTab, bumpRefresh, logout, refreshSignal, session, showNewSale]);
 
   if (isBooting) {
     return (
@@ -247,7 +219,9 @@ export default function App() {
         </SafeAreaView>
       ) : (
         <AuthProvider>
-          <AppShell />
+          <AppSettingsProvider>
+            <AppShell />
+          </AppSettingsProvider>
         </AuthProvider>
       )}
     </SafeAreaProvider>

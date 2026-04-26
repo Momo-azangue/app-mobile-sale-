@@ -4,21 +4,27 @@ import { Feather } from '@expo/vector-icons';
 
 import {
   createProduct,
+  createProductVariant,
   createStockMovement,
   deleteProduct,
+  deleteProductVariant,
   listCategories,
+  listProductVariants,
   listProducts,
   listStockMovements,
   updateProduct,
 } from '../api/services';
 import { getErrorMessage } from '../api/errors';
-import { formatCurrency, formatDate } from '../utils/format';
+import { useFormatCurrency } from '../context/AppSettingsContext';
+import { formatDate } from '../utils/format';
 import type {
   CategoryResponseDTO,
   MovementSource,
   MovementType,
   ProductResponseDTO,
+  ProductVariantResponseDTO,
   StockMovementResponseDTO,
+  TrackingMode,
 } from '../types/api';
 import { colors, radius, shadows } from '../theme/tokens';
 import { typography } from '../theme/typography';
@@ -37,6 +43,7 @@ import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface StocksScreenProps {
   refreshSignal: number;
+  onProductChanged?: () => void;
 }
 
 interface ComputedStock {
@@ -113,7 +120,8 @@ function movementVisual(type: MovementType): MovementVisual {
   }
 }
 
-export function StocksScreen({ refreshSignal }: StocksScreenProps) {
+export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenProps) {
+  const fmtCurrency = useFormatCurrency();
   const [activeTab, setActiveTab] = useState<'produits' | 'mouvements'>('produits');
   const [productQuery, setProductQuery] = useState('');
   const [movementQuery, setMovementQuery] = useState('');
@@ -134,8 +142,17 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [productName, setProductName] = useState('');
+  const [productBrand, setProductBrand] = useState('');
   const [productPrice, setProductPrice] = useState('');
   const [productCategoryId, setProductCategoryId] = useState('');
+  const [productTrackingMode, setProductTrackingMode] = useState<TrackingMode>('NONE');
+
+  // Variantes (visibles uniquement en mode édition d'un produit existant)
+  const [productVariants, setProductVariants] = useState<ProductVariantResponseDTO[]>([]);
+  const [loadingVariants, setLoadingVariants] = useState(false);
+  const [newVariantName, setNewVariantName] = useState('');
+  const [newVariantPrice, setNewVariantPrice] = useState('');
+  const [newVariantStock, setNewVariantStock] = useState('');
 
   const [showMovementModal, setShowMovementModal] = useState(false);
   const [movementProductId, setMovementProductId] = useState('');
@@ -270,28 +287,123 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
     });
   }, [movementProductFilter, movementQuery, movementTypeFilter, movements, productById]);
 
+  const loadProductVariants = useCallback(async (productId: string) => {
+    setLoadingVariants(true);
+    try {
+      const variants = await listProductVariants(productId);
+      setProductVariants(variants);
+    } catch {
+      setProductVariants([]);
+    } finally {
+      setLoadingVariants(false);
+    }
+  }, []);
+
+  const resetVariantForm = () => {
+    setNewVariantName('');
+    setNewVariantPrice('');
+    setNewVariantStock('');
+  };
+
   const openCreateProductModal = () => {
     setEditingProductId(null);
     setProductName('');
+    setProductBrand('');
     setProductPrice('');
     setProductCategoryId(categories[0]?.id ?? '');
+    setProductTrackingMode('NONE');
+    setProductVariants([]);
+    resetVariantForm();
     setShowProductModal(true);
   };
 
   const openEditProductModal = (product: ProductResponseDTO) => {
     setEditingProductId(product.id);
     setProductName(product.name);
+    setProductBrand(product.brand ?? '');
     setProductPrice(product.price != null ? String(product.price) : '');
     setProductCategoryId(product.categoryId ?? categories[0]?.id ?? '');
+    setProductTrackingMode(product.trackingMode ?? 'NONE');
+    setProductVariants([]);
+    resetVariantForm();
     setShowProductModal(true);
+    void loadProductVariants(product.id);
   };
 
   const closeProductModal = () => {
     setShowProductModal(false);
     setEditingProductId(null);
     setProductName('');
+    setProductBrand('');
     setProductPrice('');
     setProductCategoryId('');
+    setProductTrackingMode('NONE');
+    setProductVariants([]);
+    resetVariantForm();
+  };
+
+  const handleAddVariant = async () => {
+    if (!editingProductId) {
+      Alert.alert(
+        'Action impossible',
+        "Sauvegardez d'abord le produit (bouton 'Ajouter') avant de creer des variantes."
+      );
+      return;
+    }
+    const trimmedName = newVariantName.trim();
+    if (!trimmedName) {
+      Alert.alert('Validation', 'Le nom de la variante est obligatoire (ex: "Noir 256Go").');
+      return;
+    }
+    const parsedPrice = newVariantPrice.trim()
+      ? Number(newVariantPrice.replace(',', '.').trim())
+      : undefined;
+    if (parsedPrice !== undefined && (!Number.isFinite(parsedPrice) || parsedPrice < 0)) {
+      Alert.alert('Validation', 'Le prix doit etre un nombre positif ou vide.');
+      return;
+    }
+    const parsedStock = newVariantStock.trim()
+      ? Math.trunc(Number(newVariantStock.trim()))
+      : 0;
+    if (!Number.isFinite(parsedStock) || parsedStock < 0) {
+      Alert.alert('Validation', 'Le stock initial doit etre un entier positif ou zero.');
+      return;
+    }
+
+    try {
+      await createProductVariant(editingProductId, {
+        name: trimmedName,
+        price: parsedPrice,
+        stock: parsedStock,
+      });
+      resetVariantForm();
+      await loadProductVariants(editingProductId);
+      onProductChanged?.();
+    } catch (addError) {
+      // eslint-disable-next-line no-console
+      console.error('Variant create failed:', (addError as { response?: { data?: unknown } })?.response?.data ?? addError);
+      Alert.alert('Erreur', getErrorMessage(addError));
+    }
+  };
+
+  const handleDeleteVariant = (variant: ProductVariantResponseDTO) => {
+    if (!editingProductId) return;
+    Alert.alert('Supprimer variante', `Supprimer "${variant.name}" ?`, [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteProductVariant(editingProductId, variant.id);
+            await loadProductVariants(editingProductId);
+            onProductChanged?.();
+          } catch (deleteError) {
+            Alert.alert('Erreur', getErrorMessage(deleteError));
+          }
+        },
+      },
+    ]);
   };
 
   const closeMovementModal = () => {
@@ -322,8 +434,10 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
     try {
       const payload = {
         name: productName.trim(),
+        brand: productBrand.trim() || undefined,
         price: parsedPrice,
         categoryId: productCategoryId,
+        trackingMode: productTrackingMode,
       };
 
       if (editingProductId) {
@@ -503,7 +617,7 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
                         <View style={styles.productTitleWrap}>
                           <Text style={styles.productName}>{product.name}</Text>
                           <Text style={styles.productPrice}>
-                            {product.price != null ? formatCurrency(product.price) : '-'}
+                            {product.price != null ? fmtCurrency(product.price) : '-'}
                           </Text>
                         </View>
                         <View style={styles.actionsWrap}>
@@ -649,6 +763,13 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
           placeholder='Nom du produit'
         />
         <InputField
+          label='Marque (optionnel)'
+          value={productBrand}
+          onChangeText={setProductBrand}
+          placeholder='Ex: Apple, Samsung, Nestle'
+          autoCapitalize='words'
+        />
+        <InputField
           label='Prix'
           value={productPrice}
           onChangeText={setProductPrice}
@@ -664,6 +785,96 @@ export function StocksScreen({ refreshSignal }: StocksScreenProps) {
           onChange={setProductCategoryId}
           disabled={categories.length === 0}
         />
+
+        <View style={styles.formGroup}>
+          <Text style={styles.formLabel}>Type de produit</Text>
+          <SegmentedControl
+            options={[
+              { label: 'Standard', value: 'NONE' },
+              { label: 'Avec n° de serie', value: 'SERIAL' },
+            ]}
+            value={productTrackingMode}
+            onChange={(value) => setProductTrackingMode(value as TrackingMode)}
+          />
+          <Text style={styles.helperText}>
+            {productTrackingMode === 'SERIAL'
+              ? 'Chaque unite sera identifiee par un IMEI / numero de serie (telephones, ordinateurs).'
+              : 'Stock fongible en quantite (sacs de riz, chargeurs, vitres).'}
+          </Text>
+        </View>
+
+        {editingProductId && productTrackingMode === 'SERIAL' ? (
+          <View style={styles.formGroup}>
+            <Text style={styles.formLabel}>Variantes (couleur, stockage, ...)</Text>
+            <Text style={styles.helperText}>
+              Optionnel. Une variante par defaut est gardee automatiquement.
+              Ajoutez ici les variantes nommees (ex: &quot;Noir 256Go&quot;, &quot;Bleu 128Go&quot;).
+            </Text>
+
+            {loadingVariants ? (
+              <Text style={styles.helperText}>Chargement...</Text>
+            ) : productVariants.filter((v) => v.name && v.name.trim().length > 0).length === 0 ? (
+              <Text style={styles.helperText}>Aucune variante nommee pour le moment.</Text>
+            ) : (
+              <View style={styles.variantList}>
+                {productVariants
+                  .filter((v) => v.name && v.name.trim().length > 0)
+                  .map((variant) => (
+                    <View key={variant.id} style={styles.variantRow}>
+                      <View style={styles.variantRowMain}>
+                        <Text style={styles.variantName}>{variant.name}</Text>
+                        <Text style={styles.variantMeta}>
+                          {variant.price != null
+                            ? `${fmtCurrency(variant.price)} • Stock ${variant.stock}`
+                            : `Stock ${variant.stock}`}
+                        </Text>
+                      </View>
+                      <Pressable
+                        onPress={() => handleDeleteVariant(variant)}
+                        hitSlop={10}
+                      >
+                        <Feather name='trash-2' size={18} color={colors.danger600} />
+                      </Pressable>
+                    </View>
+                  ))}
+              </View>
+            )}
+
+            <View style={styles.variantAddBlock}>
+              <InputField
+                label='Nouvelle variante'
+                value={newVariantName}
+                onChangeText={setNewVariantName}
+                placeholder='Ex: Noir 256Go'
+              />
+              <View style={styles.row}>
+                <InputField
+                  label='Prix (optionnel)'
+                  value={newVariantPrice}
+                  onChangeText={setNewVariantPrice}
+                  placeholder='Ex: 850'
+                  keyboardType='decimal-pad'
+                  containerStyle={styles.flexHalf}
+                />
+                <InputField
+                  label='Stock initial'
+                  value={newVariantStock}
+                  onChangeText={setNewVariantStock}
+                  placeholder='0'
+                  keyboardType='numeric'
+                  containerStyle={styles.flexHalf}
+                />
+              </View>
+              <AppButton
+                label='Ajouter cette variante'
+                variant='outline'
+                onPress={() => {
+                  void handleAddVariant();
+                }}
+              />
+            </View>
+          </View>
+        ) : null}
 
         <View style={styles.modalActions}>
           <View style={styles.actionItem}>
@@ -923,6 +1134,54 @@ const styles = StyleSheet.create({
   formLabel: {
     ...typography.label,
     color: colors.neutral700,
+  },
+  helperText: {
+    ...typography.caption,
+    color: colors.neutral500,
+    marginTop: 6,
+  },
+  row: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  flexHalf: {
+    flex: 1,
+  },
+  variantList: {
+    marginTop: 10,
+    gap: 8,
+  },
+  variantRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: radius.md,
+    backgroundColor: colors.neutral100,
+    borderWidth: 1,
+    borderColor: colors.neutral200,
+  },
+  variantRowMain: {
+    flex: 1,
+    gap: 2,
+  },
+  variantName: {
+    ...typography.bodyMedium,
+    color: colors.neutral900,
+  },
+  variantMeta: {
+    ...typography.caption,
+    color: colors.neutral600,
+  },
+  variantAddBlock: {
+    marginTop: 14,
+    gap: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral200,
   },
   modalActions: {
     flexDirection: 'row',

@@ -21,7 +21,8 @@ import type {
   PaymentMethod,
   SaleResponseDTO,
 } from '../types/api';
-import { formatCurrency, formatDate } from '../utils/format';
+import { useFormatCurrency } from '../context/AppSettingsContext';
+import { formatDate } from '../utils/format';
 import { colors, radius } from '../theme/tokens';
 import { typography } from '../theme/typography';
 import { AppButton } from '../components/common/AppButton';
@@ -59,6 +60,7 @@ function toPdfUrl(invoiceId: string): string {
 
 export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
   const { session } = useAuth();
+  const fmtCurrency = useFormatCurrency();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
@@ -247,7 +249,7 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
     if (amount - selectedInvoice.balanceDue > MONEY_EPSILON) {
       Alert.alert(
         'Validation',
-        `Le montant saisi depasse le reste du (${formatCurrency(selectedInvoice.balanceDue)}).`
+        `Le montant saisi depasse le reste du (${fmtCurrency(selectedInvoice.balanceDue)}).`
       );
       return;
     }
@@ -286,7 +288,7 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
         anchor.click();
         URL.revokeObjectURL(objectUrl);
       } else {
-        if (!session?.accessToken || !session.tenantId) {
+        if (!session?.accessToken) {
           throw new Error('Session invalide pour le telechargement PDF.');
         }
 
@@ -294,7 +296,6 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
         const downloaded = await FileSystem.downloadAsync(toPdfUrl(invoice.id), target, {
           headers: {
             Authorization: `Bearer ${session.accessToken}`,
-            'X-Tenant-Id': session.tenantId,
             Accept: 'application/pdf',
           },
         });
@@ -381,15 +382,15 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
 
                 <View style={styles.invoiceMetaRow}>
                   <Text style={styles.metaLabel}>Montant</Text>
-                  <Text style={styles.metaValue}>{formatCurrency(invoice.montant)}</Text>
+                  <Text style={styles.metaValue}>{fmtCurrency(invoice.montant)}</Text>
                 </View>
                 <View style={styles.invoiceMetaRow}>
                   <Text style={styles.metaLabel}>Deja paye</Text>
-                  <Text style={styles.metaValue}>{formatCurrency(invoice.amountPaid)}</Text>
+                  <Text style={styles.metaValue}>{fmtCurrency(invoice.amountPaid)}</Text>
                 </View>
                 <View style={styles.invoiceMetaRow}>
                   <Text style={styles.metaLabel}>Reste du</Text>
-                  <Text style={styles.metaValue}>{formatCurrency(invoice.balanceDue)}</Text>
+                  <Text style={styles.metaValue}>{fmtCurrency(invoice.balanceDue)}</Text>
                 </View>
                 <View style={styles.invoiceMetaRow}>
                   <Text style={styles.metaLabel}>Date</Text>
@@ -502,7 +503,7 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
                     {selected ? <Feather name='check-circle' size={18} color={colors.primary600} /> : null}
                   </View>
                   <Text style={styles.saleItemMeta}>{sale.id}</Text>
-                  <Text style={styles.saleItemMeta}>{formatCurrency(sale.montantTotal)}</Text>
+                  <Text style={styles.saleItemMeta}>{fmtCurrency(sale.montantTotal)}</Text>
                 </Pressable>
               );
             })}
@@ -532,7 +533,7 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
               Facture: {selectedInvoice.invoiceNumber || selectedInvoice.id}
             </Text>
             <Text style={styles.paymentSummaryText}>
-              Reste du: {formatCurrency(selectedInvoice.balanceDue)}
+              Reste du: {fmtCurrency(selectedInvoice.balanceDue)}
             </Text>
           </View>
         ) : null}
@@ -579,9 +580,9 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
             <Text style={styles.paymentSummaryText}>Date: {formatDate(detailInvoice.date)}</Text>
             <Text style={styles.paymentSummaryText}>Echeance: {formatDate(detailInvoice.dueDate)}</Text>
             <Text style={styles.paymentSummaryText}>Statut: {detailInvoice.statut}</Text>
-            <Text style={styles.paymentSummaryText}>Montant: {formatCurrency(detailInvoice.montant)}</Text>
-            <Text style={styles.paymentSummaryText}>Deja paye: {formatCurrency(detailInvoice.amountPaid)}</Text>
-            <Text style={styles.paymentSummaryText}>Reste du: {formatCurrency(detailInvoice.balanceDue)}</Text>
+            <Text style={styles.paymentSummaryText}>Montant: {fmtCurrency(detailInvoice.montant)}</Text>
+            <Text style={styles.paymentSummaryText}>Deja paye: {fmtCurrency(detailInvoice.amountPaid)}</Text>
+            <Text style={styles.paymentSummaryText}>Reste du: {fmtCurrency(detailInvoice.balanceDue)}</Text>
           </View>
         ) : null}
 
@@ -592,8 +593,8 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
               <View key={`${line.productId ?? line.productName ?? index}-${index}`} style={styles.saleItem}>
                 <Text style={styles.saleItemClient}>{line.productName ?? line.productId ?? 'Produit'}</Text>
                 <Text style={styles.saleItemMeta}>Quantite: {line.quantity}</Text>
-                <Text style={styles.saleItemMeta}>Prix unitaire: {formatCurrency(line.unitPrice)}</Text>
-                <Text style={styles.saleItemMeta}>Total: {formatCurrency(line.total)}</Text>
+                <Text style={styles.saleItemMeta}>Prix unitaire: {fmtCurrency(line.unitPrice)}</Text>
+                <Text style={styles.saleItemMeta}>Total: {fmtCurrency(line.total)}</Text>
               </View>
             ))}
           </ScrollView>

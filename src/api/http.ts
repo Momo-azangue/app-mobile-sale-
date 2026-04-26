@@ -9,7 +9,6 @@ type UnauthorizedHandler = () => void;
 
 interface HttpAuthBindings {
   getAccessToken?: HeaderGetter;
-  getTenantId?: HeaderGetter;
   refreshAccessToken?: RefreshHandler;
   onUnauthorized?: UnauthorizedHandler;
 }
@@ -58,7 +57,6 @@ function shouldRetryNetworkRequest(
 
 export function configureHttpAuth(bindings: HttpAuthBindings): void {
   authBindings.getAccessToken = bindings.getAccessToken;
-  authBindings.getTenantId = bindings.getTenantId;
   authBindings.refreshAccessToken = bindings.refreshAccessToken;
   authBindings.onUnauthorized = bindings.onUnauthorized;
 }
@@ -83,16 +81,12 @@ export const api = axios.create({
 
 api.interceptors.request.use((config) => {
   const token = authBindings.getAccessToken?.();
-  const tenantId = authBindings.getTenantId?.();
 
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
 
-  if (tenantId) {
-    config.headers['X-Tenant-Id'] = tenantId;
-  }
-
+  // Le tenantId est porté par le claim JWT côté backend, pas besoin de header dédié.
   return config;
 });
 

@@ -1,9 +1,48 @@
+// RFC 7807 Problem Details (application/problem+json) — format renvoyé par le backend.
 export interface ErrorResponse {
-  timestamp: string;
+  type: string;
+  title: string;
   status: number;
-  error: string;
-  message: string;
-  path: string;
+  detail?: string;
+  instance?: string;
+  timestamp?: string;
+}
+
+export interface PagedResponse<T> {
+  content: T[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
+export interface LogoutRequestDTO {
+  refreshToken: string;
+}
+
+export interface TenantResponseDTO {
+  id: string;
+  name: string;
+  planId?: string;
+  subscriptionEndDate?: string | null;
+  emailContact?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface TenantPlanInfoDTO {
+  tenantId: string;
+  planId?: string;
+  planName?: string;
+  maxUsers?: number;
+  maxProducts?: number;
+  currentUserCount?: number;
+  currentProductCount?: number;
+  subscriptionEndDate?: string | null;
+}
+
+export interface ChangePlanRequestDTO {
+  planId: string;
 }
 
 export interface AuthResponseDTO {
@@ -16,6 +55,23 @@ export interface AuthResponseDTO {
   email: string;
   role: string;
   tenantId: string;
+}
+
+export interface ForgotPasswordRequestDTO {
+  email: string;
+}
+
+export interface ResetPasswordRequestDTO {
+  token: string;
+  newPassword: string;
+}
+
+export interface VerifyEmailRequestDTO {
+  email: string;
+}
+
+export interface VerifyEmailConfirmRequestDTO {
+  token: string;
 }
 
 export interface UserRequestDTO {
@@ -115,24 +171,53 @@ export interface InvitationResponseDTO {
   expiresAt?: string;
 }
 
+export type TrackingMode = 'NONE' | 'SERIAL';
+
 export interface ProductResponseDTO {
   id: string;
   name: string;
+  brand?: string;
   price?: number;
   categoryId?: string;
   categoryName?: string;
+  trackingMode?: TrackingMode;
   createdAt?: string;
   updatedAt?: string;
 }
 
 export interface ProductRequestDTO {
   name: string;
+  brand?: string;
   price: number;
   categoryId: string;
+  trackingMode?: TrackingMode;
+}
+
+export interface ProductVariantResponseDTO {
+  id: string;
+  productId: string;
+  name?: string;
+  sku?: string;
+  barcode?: string;
+  attributes?: Record<string, string>;
+  price?: number;
+  stock: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ProductVariantRequestDTO {
+  name?: string;
+  sku?: string;
+  barcode?: string;
+  attributes?: Record<string, string>;
+  price?: number;
+  stock?: number;
 }
 
 export interface ProductItemResponseDTO {
   productId: string;
+  variantId?: string;
   productName?: string;
   quantity: number;
   priceAtSale?: number;
@@ -156,6 +241,8 @@ export type PaymentMethod = 'CASH' | 'MOBILE_MONEY' | 'CARTE';
 
 export interface SaleCreateProductItemDTO {
   productId: string;
+  /** Optionnel : la variante par défaut du produit est utilisée si non fourni. */
+  variantId?: string;
   quantity: number;
   priceAtSale: number;
 }
@@ -170,6 +257,7 @@ export interface SaleRequestDTO {
 
 export interface InvoiceLineDTO {
   productId?: string;
+  variantId?: string;
   productName?: string;
   quantity: number;
   unitPrice: number;
@@ -238,6 +326,7 @@ export type MovementSource =
 export interface StockMovementResponseDTO {
   id: string;
   productId: string;
+  variantId?: string;
   quantity: number;
   type: MovementType;
   source?: MovementSource;
@@ -250,6 +339,8 @@ export interface StockMovementResponseDTO {
 
 export interface StockMovementRequestDTO {
   productId: string;
+  /** Optionnel : la variante par défaut du produit est utilisée si non fourni. */
+  variantId?: string;
   quantity: number;
   type: MovementType;
   source?: MovementSource;

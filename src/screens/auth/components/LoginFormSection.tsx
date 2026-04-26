@@ -1,4 +1,4 @@
-import { StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors } from '../../../theme/tokens';
 import { typography } from '../../../theme/typography';
@@ -11,8 +11,10 @@ interface LoginFormSectionProps {
   isLoading: boolean;
   canSubmit: boolean;
   error: string | null;
+  notice?: string | null;
   onEmailChange: (value: string) => void;
   onPasswordChange: (value: string) => void;
+  onForgotPassword: () => void;
   onSubmit: () => void;
 }
 
@@ -22,8 +24,10 @@ export function LoginFormSection({
   isLoading,
   canSubmit,
   error,
+  notice,
   onEmailChange,
   onPasswordChange,
+  onForgotPassword,
   onSubmit,
 }: LoginFormSectionProps) {
   return (
@@ -45,7 +49,14 @@ export function LoginFormSection({
         placeholder='********'
       />
 
+      <View style={styles.secondaryActionRow}>
+        <Pressable onPress={onForgotPassword} hitSlop={8}>
+          <Text style={styles.secondaryActionText}>Mot de passe oublie ?</Text>
+        </Pressable>
+      </View>
+
       {error ? <Text style={styles.error}>{error}</Text> : null}
+      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
 
       <AppButton
         label='Se connecter'
@@ -58,8 +69,20 @@ export function LoginFormSection({
 }
 
 const styles = StyleSheet.create({
+  secondaryActionRow: {
+    alignItems: 'flex-end',
+    marginTop: -2,
+  },
+  secondaryActionText: {
+    ...typography.label,
+    color: colors.primary600,
+  },
   error: {
     ...typography.label,
     color: colors.danger600,
+  },
+  notice: {
+    ...typography.label,
+    color: colors.neutral600,
   },
 });

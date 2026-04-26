@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { createSale, listClients, listProducts } from '../api/services';
+import { createSale, listClients, listProductVariants, listProducts } from '../api/services';
 import { getErrorMessage } from '../api/errors';
-import type { ClientResponseDTO, InvoiceStatus, ProductResponseDTO, SaleRequestDTO } from '../types/api';
+import type {
+  ClientResponseDTO,
+  InvoiceStatus,
+  ProductResponseDTO,
+  ProductVariantResponseDTO,
+  SaleRequestDTO,
+} from '../types/api';
 import { colors, radius, shadows } from '../theme/tokens';
 import { typography } from '../theme/typography';
 import { LoadingState } from '../components/common/LoadingState';
@@ -26,6 +32,8 @@ interface NouvelleVenteProps {
 interface SaleLineForm {
   id: string;
   productId: string;
+  /** Vide = la variante par defaut sera resolue par le backend. */
+  variantId: string;
   quantity: string;
   priceAtSale: string;
 }
@@ -44,6 +52,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const [clients, setClients] = useState<ClientResponseDTO[]>([]);
   const [products, setProducts] = useState<ProductResponseDTO[]>([]);
@@ -52,8 +61,16 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   const [status, setStatus] = useState<InvoiceStatus>('IMPAYE');
   const [initialPaidAmount, setInitialPaidAmount] = useState('');
   const [lines, setLines] = useState<SaleLineForm[]>([
-    { id: nextLineId(), productId: '', quantity: '1', priceAtSale: '' },
+    { id: nextLineId(), productId: '', variantId: '', quantity: '1', priceAtSale: '' },
   ]);
+
+  // Cache productId -> variantes nommées (excluant la default sans nom).
+  // Invalidé à chaque refreshSignal pour récupérer les variantes créées ailleurs (Stocks).
+  const [variantsByProduct, setVariantsByProduct] = useState<Record<string, ProductVariantResponseDTO[]>>({});
+
+  useEffect(() => {
+    setVariantsByProduct({});
+  }, [refreshSignal]);
 
   const loadReferences = useCallback(async (showLoader: boolean = true) => {
     if (showLoader) {
@@ -128,11 +145,32 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   };
 
   const addLine = () => {
-    setLines((previous) => [...previous, { id: nextLineId(), productId: '', quantity: '1', priceAtSale: '' }]);
+    setLines((previous) => [
+      ...previous,
+      { id: nextLineId(), productId: '', variantId: '', quantity: '1', priceAtSale: '' },
+    ]);
   };
 
   const removeLine = (lineId: string) => {
     setLines((previous) => (previous.length > 1 ? previous.filter((line) => line.id !== lineId) : previous));
+  };
+
+  const ensureVariantsLoaded = useCallback(async (productId: string) => {
+    if (!productId || variantsByProduct[productId] !== undefined) return;
+    try {
+      const variants = await listProductVariants(productId);
+      const named = variants.filter((v) => v.name && v.name.trim().length > 0);
+      setVariantsByProduct((prev) => ({ ...prev, [productId]: named }));
+    } catch {
+      // Silencieux : si on ne peut pas charger, on ne montre juste pas le picker
+      setVariantsByProduct((prev) => ({ ...prev, [productId]: [] }));
+    }
+  }, [variantsByProduct]);
+
+  const handleProductChange = (lineId: string, productId: string) => {
+    // Reset variantId quand on change de produit (les variantes sont liées au produit)
+    updateLine(lineId, { productId, variantId: '' });
+    void ensureVariantsLoaded(productId);
   };
 
   const buildPayload = (): SaleRequestDTO | null => {
@@ -203,10 +241,11 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
 
     return {
       clientId,
-      products: mappedProducts.map((line) => ({
+      products: lines.map((line) => ({
         productId: line.productId,
-        quantity: line.quantity,
-        priceAtSale: line.priceAtSale,
+        variantId: line.variantId || undefined,
+        quantity: Number(line.quantity),
+        priceAtSale: Number(line.priceAtSale),
       })),
       date: new Date().toISOString(),
       invoiceStatus: status,
@@ -215,6 +254,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   };
 
   const handleSubmit = async () => {
+    setSubmitError(null);
     const payload = buildPayload();
     if (!payload) {
       return;
@@ -223,17 +263,18 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
     setSubmitting(true);
     try {
       await createSale(payload);
-      Alert.alert('Succes', 'Vente creee avec succes.', [
-        {
-          text: 'OK',
-          onPress: () => {
-            onCreated();
-            onBack();
-          },
-        },
-      ]);
-    } catch (submitError) {
-      Alert.alert('Erreur creation vente', getErrorMessage(submitError));
+      // Redirection garantie : on ne dépend pas du callback de l'Alert (qui peut
+      // ne jamais s'exécuter selon la plateforme/le focus).
+      onCreated();
+      onBack();
+      Alert.alert('Succes', 'Vente creee avec succes.');
+    } catch (caught) {
+      // Log brut pour faciliter le debug (visible dans Metro/Expo logs)
+      // eslint-disable-next-line no-console
+      console.error('Sale creation failed:', (caught as { response?: { data?: unknown } })?.response?.data ?? caught);
+      const message = getErrorMessage(caught);
+      setSubmitError(message);
+      Alert.alert('Erreur creation vente', message);
     } finally {
       setSubmitting(false);
     }
@@ -289,6 +330,12 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
 
       <ScreenHeader title='Nouvelle vente' subtitle='Creation d une vente et generation de facture' />
 
+      {submitError ? (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorBannerText}>{submitError}</Text>
+        </View>
+      ) : null}
+
       <View style={styles.formGroup}>
         <SearchableSelectField
           label='Client'
@@ -340,6 +387,12 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
 
       {lines.map((line, index) => {
         const selectedProduct = productById.get(line.productId);
+        const variantsForProduct = variantsByProduct[line.productId] ?? [];
+        const variantOptions: SearchableSelectOption[] = variantsForProduct.map((v) => ({
+          label: v.name ?? 'Variante',
+          value: v.id,
+          subtitle: v.price != null ? `Prix ${v.price}` : undefined,
+        }));
         return (
           <AppCard key={line.id} style={styles.lineCard}>
             <View style={styles.lineHeader}>
@@ -355,8 +408,19 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
               placeholder='Choisir un produit'
               value={line.productId}
               options={productOptions}
-              onChange={(value) => updateLine(line.id, { productId: value })}
+              onChange={(value) => handleProductChange(line.id, value)}
             />
+
+            {variantsForProduct.length > 0 ? (
+              <SearchableSelectField
+                label='Variante'
+                modalTitle='Selectionner une variante'
+                placeholder='Choisir une variante (sinon defaut)'
+                value={line.variantId}
+                options={variantOptions}
+                onChange={(value) => updateLine(line.id, { variantId: value })}
+              />
+            ) : null}
 
             <Text style={styles.selectedProductText}>Selection: {selectedProduct?.name ?? '-'}</Text>
             <Text style={styles.selectedProductText}>
@@ -486,5 +550,17 @@ const styles = StyleSheet.create({
   totalPreview: {
     ...typography.bodyMedium,
     color: colors.neutral900,
+  },
+  errorBanner: {
+    backgroundColor: colors.danger100,
+    borderColor: colors.danger600,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    padding: 12,
+    marginBottom: 12,
+  },
+  errorBannerText: {
+    ...typography.label,
+    color: colors.danger600,
   },
 });
