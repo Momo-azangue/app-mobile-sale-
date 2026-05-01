@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
@@ -17,6 +17,7 @@ import { ScreenHeader } from '../components/common/ScreenHeader';
 import { AppButton } from '../components/common/AppButton';
 import { AppCard } from '../components/common/AppCard';
 import { InputField } from '../components/common/InputField';
+import { useCachedResource } from '../hooks/useCachedResource';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface ClientsScreenProps {
@@ -25,10 +26,7 @@ interface ClientsScreenProps {
 }
 
 export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenProps) {
-  const [clients, setClients] = useState<ClientResponseDTO[]>([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
@@ -41,25 +39,24 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
   const [editEmail, setEditEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
 
-  const loadClients = useCallback(async (showLoader: boolean = true) => {
-    if (showLoader) {
-      setLoading(true);
-    }
-    setError(null);
-    try {
-      const fetched = await listClients();
-      setClients(fetched);
-    } catch (loadError) {
-      setError(getErrorMessage(loadError));
-    } finally {
-      setLoading(false);
-    }
+  const fetchClients = useCallback(async (): Promise<ClientResponseDTO[]> => {
+    return listClients();
   }, []);
 
-  useEffect(() => {
-    void loadClients(true);
-  }, [loadClients, refreshSignal]);
+  const { data, loading, error, reload } = useCachedResource({
+    key: 'screen.clients',
+    fetcher: fetchClients,
+    refreshSignal,
+  });
+
+  const loadClients = useCallback(
+    async (showLoader: boolean = true) => {
+      await reload(showLoader ? 'blocking' : 'silent');
+    },
+    [reload]
+  );
   const { refreshing, onRefresh } = usePullToRefresh(() => loadClients(false));
+  const clients = data ?? [];
 
   const filteredClients = useMemo(() => {
     const lower = searchTerm.toLowerCase();
@@ -104,7 +101,7 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
 
       closeCreateModal();
 
-      await loadClients();
+      await loadClients(false);
       onClientChanged();
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
@@ -122,7 +119,7 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
         onPress: async () => {
           try {
             await deleteClient(client.id);
-            await loadClients();
+            await loadClients(false);
             onClientChanged();
           } catch (deleteError) {
             Alert.alert('Erreur', getErrorMessage(deleteError));
@@ -158,7 +155,7 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
       });
 
       closeEditModal();
-      await loadClients();
+      await loadClients(false);
       onClientChanged();
     } catch (updateError) {
       Alert.alert('Erreur', getErrorMessage(updateError));

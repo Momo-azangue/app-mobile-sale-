@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { inviteUserToTenant, listInvitations } from '../api/services';
@@ -17,6 +17,7 @@ import { InputField } from '../components/common/InputField';
 import { LoadingState } from '../components/common/LoadingState';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SegmentedControl, type SegmentedOption } from '../components/common/SegmentedControl';
+import { useCachedResource } from '../hooks/useCachedResource';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface InvitationsScreenProps {
@@ -32,10 +33,7 @@ const statusMeta: Record<InvitationStatus, { label: string; text: string; bg: st
 export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
   const { session } = useAuth();
 
-  const [invitations, setInvitations] = useState<InvitationResponseDTO[]>([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [email, setEmail] = useState('');
@@ -49,28 +47,25 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
     []
   );
 
-  const loadInvitations = useCallback(async (showLoader: boolean = true) => {
-    if (showLoader) {
-      setLoading(true);
-    }
-    setError(null);
-    try {
-      const fetched = await listInvitations();
-      setInvitations(fetched);
-    } catch (loadError) {
-      setError(getErrorMessage(loadError));
-    } finally {
-      setLoading(false);
-    }
+  const fetchInvitations = useCallback(async (): Promise<InvitationResponseDTO[]> => {
+    return listInvitations();
   }, []);
 
-  useEffect(() => {
-    if (!session?.tenantId) {
-      return;
-    }
-    void loadInvitations(true);
-  }, [loadInvitations, refreshSignal, session?.tenantId]);
+  const { data, loading, error, reload } = useCachedResource({
+    key: `screen.invitations.${session?.tenantId ?? 'none'}`,
+    fetcher: fetchInvitations,
+    refreshSignal,
+    enabled: Boolean(session?.tenantId),
+  });
+
+  const loadInvitations = useCallback(
+    async (showLoader: boolean = true) => {
+      await reload(showLoader ? 'blocking' : 'silent');
+    },
+    [reload]
+  );
   const { refreshing, onRefresh } = usePullToRefresh(() => loadInvitations(false));
+  const invitations = data ?? [];
 
   if (!session?.tenantId) {
     return (
@@ -105,7 +100,7 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
       });
 
       closeCreateModal();
-      await loadInvitations();
+      await loadInvitations(false);
       Alert.alert('Succes', 'Invitation envoyee.');
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));

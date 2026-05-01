@@ -4,6 +4,7 @@ import type { PropsWithChildren } from 'react';
 import { clearSession, loadSession, persistSession } from '../api/storage';
 import { login, logout as logoutRequest, refresh, registerAdminAndTenant } from '../api/services';
 import { configureHttpAuth } from '../api/http';
+import { clearMemoryCache } from '../api/memoryCache';
 import type { AuthResponseDTO, RegisterRequestDTO, SessionState } from '../types/api';
 
 interface AuthContextValue {
@@ -30,12 +31,17 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, [session]);
 
   const applySession = useCallback(async (nextSession: SessionState) => {
+    const previousTenantId = sessionRef.current?.tenantId;
+    if (previousTenantId && previousTenantId !== nextSession.tenantId) {
+      clearMemoryCache();
+    }
     setSession(nextSession);
     sessionRef.current = nextSession;
     await persistSession(nextSession);
   }, []);
 
   const resetSession = useCallback(async () => {
+    clearMemoryCache();
     setSession(null);
     sessionRef.current = null;
     await clearSession();

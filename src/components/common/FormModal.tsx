@@ -5,6 +5,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -39,7 +40,14 @@ export function FormModal({ visible, title, onClose, children, contentStyle }: F
             </Pressable>
           </View>
 
-          <View style={styles.body}>{children}</View>
+          <ScrollView
+            style={styles.body}
+            contentContainerStyle={styles.bodyContent}
+            keyboardShouldPersistTaps='handled'
+            showsVerticalScrollIndicator={false}
+          >
+            {children}
+          </ScrollView>
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -52,6 +60,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 18,
+    paddingVertical: 24,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
@@ -60,6 +69,7 @@ const styles = StyleSheet.create({
   dialog: {
     width: '100%',
     maxWidth: 420,
+    maxHeight: '90%',
     backgroundColor: colors.white,
     borderRadius: radius.md,
     overflow: 'hidden',
@@ -86,6 +96,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   body: {
+    width: '100%',
+  },
+  bodyContent: {
     paddingHorizontal: 16,
     paddingVertical: 16,
     gap: 10,

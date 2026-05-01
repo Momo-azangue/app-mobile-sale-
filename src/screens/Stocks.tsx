@@ -1,4 +1,4 @@
-import { ComponentProps, useCallback, useEffect, useMemo, useState } from 'react';
+import { ComponentProps, useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
@@ -39,6 +39,7 @@ import { SearchableSelectField, type SearchableSelectOption } from '../component
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
 import { SegmentedControl } from '../components/common/SegmentedControl';
+import { useCachedResource } from '../hooks/useCachedResource';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface StocksScreenProps {
@@ -49,6 +50,12 @@ interface StocksScreenProps {
 interface ComputedStock {
   available: number;
   consigned: number;
+}
+
+interface StockScreenData {
+  products: ProductResponseDTO[];
+  movements: StockMovementResponseDTO[];
+  categories: CategoryResponseDTO[];
 }
 
 type MovementVisual = {
@@ -132,12 +139,7 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
   const [movementTypeFilter, setMovementTypeFilter] = useState<'all' | MovementType>('all');
   const [movementProductFilter, setMovementProductFilter] = useState('all');
 
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [products, setProducts] = useState<ProductResponseDTO[]>([]);
-  const [movements, setMovements] = useState<StockMovementResponseDTO[]>([]);
-  const [categories, setCategories] = useState<CategoryResponseDTO[]>([]);
 
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
@@ -150,6 +152,8 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
   // Variantes (visibles uniquement en mode édition d'un produit existant)
   const [productVariants, setProductVariants] = useState<ProductVariantResponseDTO[]>([]);
   const [loadingVariants, setLoadingVariants] = useState(false);
+  const [savingVariant, setSavingVariant] = useState(false);
+  const [variantError, setVariantError] = useState<string | null>(null);
   const [newVariantName, setNewVariantName] = useState('');
   const [newVariantPrice, setNewVariantPrice] = useState('');
   const [newVariantStock, setNewVariantStock] = useState('');
@@ -161,34 +165,42 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
   const [movementSource, setMovementSource] = useState<MovementSource | ''>('');
   const [movementReason, setMovementReason] = useState('');
 
-  const loadStockData = useCallback(async (showLoader: boolean = true) => {
-    if (showLoader) {
-      setLoading(true);
-    }
-    setError(null);
-
-    try {
-      const [fetchedProducts, fetchedMovements, fetchedCategories] = await Promise.all([
-        listProducts(),
-        listStockMovements(),
-        listCategories(),
-      ]);
-      setProducts(fetchedProducts);
-      setMovements(fetchedMovements);
-      setCategories(fetchedCategories);
-    } catch (loadError) {
-      setError(getErrorMessage(loadError));
-    } finally {
-      setLoading(false);
-    }
+  const fetchStockData = useCallback(async (): Promise<StockScreenData> => {
+    const [fetchedProducts, fetchedMovements, fetchedCategories] = await Promise.all([
+      listProducts(),
+      listStockMovements(),
+      listCategories(),
+    ]);
+    return {
+      products: fetchedProducts,
+      movements: fetchedMovements,
+      categories: fetchedCategories,
+    };
   }, []);
 
-  useEffect(() => {
-    void loadStockData(true);
-  }, [loadStockData, refreshSignal]);
+  const { data, loading, error, reload } = useCachedResource({
+    key: 'screen.stocks',
+    fetcher: fetchStockData,
+    refreshSignal,
+  });
+
+  const loadStockData = useCallback(
+    async (showLoader: boolean = true) => {
+      await reload(showLoader ? 'blocking' : 'silent');
+    },
+    [reload]
+  );
   const { refreshing, onRefresh } = usePullToRefresh(() => loadStockData(false));
 
+  const products = data?.products ?? [];
+  const movements = data?.movements ?? [];
+  const categories = data?.categories ?? [];
+
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
+  const namedProductVariants = useMemo(
+    () => productVariants.filter((variant) => variant.name && variant.name.trim().length > 0),
+    [productVariants]
+  );
 
   const categoryOptions = useMemo<SearchableSelectOption[]>(
     () =>
@@ -289,11 +301,13 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
 
   const loadProductVariants = useCallback(async (productId: string) => {
     setLoadingVariants(true);
+    setVariantError(null);
     try {
       const variants = await listProductVariants(productId);
       setProductVariants(variants);
-    } catch {
+    } catch (variantLoadError) {
       setProductVariants([]);
+      setVariantError(getErrorMessage(variantLoadError));
     } finally {
       setLoadingVariants(false);
     }
@@ -313,6 +327,7 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
     setProductCategoryId(categories[0]?.id ?? '');
     setProductTrackingMode('NONE');
     setProductVariants([]);
+    setVariantError(null);
     resetVariantForm();
     setShowProductModal(true);
   };
@@ -325,6 +340,7 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
     setProductCategoryId(product.categoryId ?? categories[0]?.id ?? '');
     setProductTrackingMode(product.trackingMode ?? 'NONE');
     setProductVariants([]);
+    setVariantError(null);
     resetVariantForm();
     setShowProductModal(true);
     void loadProductVariants(product.id);
@@ -339,10 +355,15 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
     setProductCategoryId('');
     setProductTrackingMode('NONE');
     setProductVariants([]);
+    setSavingVariant(false);
+    setVariantError(null);
     resetVariantForm();
   };
 
   const handleAddVariant = async () => {
+    if (savingVariant) {
+      return;
+    }
     if (!editingProductId) {
       Alert.alert(
         'Action impossible',
@@ -370,6 +391,8 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
       return;
     }
 
+    setSavingVariant(true);
+    setVariantError(null);
     try {
       await createProductVariant(editingProductId, {
         name: trimmedName,
@@ -380,9 +403,11 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
       await loadProductVariants(editingProductId);
       onProductChanged?.();
     } catch (addError) {
-      // eslint-disable-next-line no-console
-      console.error('Variant create failed:', (addError as { response?: { data?: unknown } })?.response?.data ?? addError);
-      Alert.alert('Erreur', getErrorMessage(addError));
+      const message = getErrorMessage(addError);
+      setVariantError(message);
+      Alert.alert('Erreur', message);
+    } finally {
+      setSavingVariant(false);
     }
   };
 
@@ -447,7 +472,7 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
       }
 
       closeProductModal();
-      await loadStockData();
+      await loadStockData(false);
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {
@@ -464,7 +489,7 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
         onPress: async () => {
           try {
             await deleteProduct(product.id);
-            await loadStockData();
+            await loadStockData(false);
           } catch (deleteError) {
             Alert.alert('Erreur', getErrorMessage(deleteError));
           }
@@ -496,7 +521,7 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
       });
 
       closeMovementModal();
-      await loadStockData();
+      await loadStockData(false);
     } catch (createError) {
       Alert.alert('Erreur', getErrorMessage(createError));
     } finally {
@@ -803,7 +828,7 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
           </Text>
         </View>
 
-        {editingProductId && productTrackingMode === 'SERIAL' ? (
+        {editingProductId ? (
           <View style={styles.formGroup}>
             <Text style={styles.formLabel}>Variantes (couleur, stockage, ...)</Text>
             <Text style={styles.helperText}>
@@ -811,15 +836,19 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
               Ajoutez ici les variantes nommees (ex: &quot;Noir 256Go&quot;, &quot;Bleu 128Go&quot;).
             </Text>
 
+            {variantError ? (
+              <View style={styles.variantErrorBox}>
+                <Text style={styles.variantErrorText}>{variantError}</Text>
+              </View>
+            ) : null}
+
             {loadingVariants ? (
               <Text style={styles.helperText}>Chargement...</Text>
-            ) : productVariants.filter((v) => v.name && v.name.trim().length > 0).length === 0 ? (
+            ) : namedProductVariants.length === 0 ? (
               <Text style={styles.helperText}>Aucune variante nommee pour le moment.</Text>
             ) : (
               <View style={styles.variantList}>
-                {productVariants
-                  .filter((v) => v.name && v.name.trim().length > 0)
-                  .map((variant) => (
+                {namedProductVariants.map((variant) => (
                     <View key={variant.id} style={styles.variantRow}>
                       <View style={styles.variantRowMain}>
                         <Text style={styles.variantName}>{variant.name}</Text>
@@ -831,6 +860,7 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
                       </View>
                       <Pressable
                         onPress={() => handleDeleteVariant(variant)}
+                        disabled={savingVariant}
                         hitSlop={10}
                       >
                         <Feather name='trash-2' size={18} color={colors.danger600} />
@@ -866,8 +896,10 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
                 />
               </View>
               <AppButton
-                label='Ajouter cette variante'
+                label={savingVariant ? 'Ajout...' : 'Ajouter cette variante'}
                 variant='outline'
+                loading={savingVariant}
+                disabled={loadingVariants}
                 onPress={() => {
                   void handleAddVariant();
                 }}
@@ -878,7 +910,7 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
 
         <View style={styles.modalActions}>
           <View style={styles.actionItem}>
-            <AppButton label='Retour' variant='outline' onPress={closeProductModal} disabled={saving} />
+            <AppButton label='Retour' variant='outline' onPress={closeProductModal} disabled={saving || savingVariant} />
           </View>
           <View style={styles.actionItem}>
             <AppButton
@@ -1175,6 +1207,18 @@ const styles = StyleSheet.create({
   variantMeta: {
     ...typography.caption,
     color: colors.neutral600,
+  },
+  variantErrorBox: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: radius.md,
+    backgroundColor: colors.danger100,
+    borderWidth: 1,
+    borderColor: colors.danger500,
+  },
+  variantErrorText: {
+    ...typography.caption,
+    color: colors.danger600,
   },
   variantAddBlock: {
     marginTop: 14,

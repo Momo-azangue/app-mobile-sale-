@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { listInvoices, listSales } from '../api/services';
-import { getErrorMessage } from '../api/errors';
 import { useFormatCurrency } from '../context/AppSettingsContext';
 import { formatDate } from '../utils/format';
 import type { InvoiceResponseDTO, InvoiceStatus, SaleResponseDTO } from '../types/api';
@@ -17,6 +16,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
 import { ChipGroup, type ChipOption } from '../components/common/ChipGroup';
+import { useCachedResource } from '../hooks/useCachedResource';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface VentesScreenProps {
@@ -36,6 +36,11 @@ interface SaleCardData {
   date?: string;
   items: number;
   consignment: boolean;
+}
+
+interface VentesData {
+  sales: SaleResponseDTO[];
+  invoices: InvoiceResponseDTO[];
 }
 
 type PeriodFilter = 'all' | 'today' | '7d' | '30d';
@@ -96,38 +101,29 @@ function toSaleCards(sales: SaleResponseDTO[], invoices: InvoiceResponseDTO[]): 
 
 export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) {
   const fmtCurrency = useFormatCurrency();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [sales, setSales] = useState<SaleResponseDTO[]>([]);
-  const [invoices, setInvoices] = useState<InvoiceResponseDTO[]>([]);
-
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<'all' | InvoiceStatus>('all');
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('all');
   const [showExtraFilters, setShowExtraFilters] = useState(false);
   const [selectedSale, setSelectedSale] = useState<SaleCardData | null>(null);
 
-  const loadSales = useCallback(async (showLoader: boolean = true) => {
-    if (showLoader) {
-      setLoading(true);
-    }
-    setError(null);
-
-    try {
-      const [fetchedSales, fetchedInvoices] = await Promise.all([listSales(), listInvoices()]);
-      setSales(fetchedSales);
-      setInvoices(fetchedInvoices);
-    } catch (loadError) {
-      setError(getErrorMessage(loadError));
-    } finally {
-      setLoading(false);
-    }
+  const fetchSalesData = useCallback(async (): Promise<VentesData> => {
+    const [fetchedSales, fetchedInvoices] = await Promise.all([listSales(), listInvoices()]);
+    return {
+      sales: fetchedSales,
+      invoices: fetchedInvoices,
+    };
   }, []);
 
-  useEffect(() => {
-    void loadSales(true);
-  }, [loadSales, refreshSignal]);
-  const { refreshing, onRefresh } = usePullToRefresh(() => loadSales(false));
+  const { data, loading, error, reload } = useCachedResource({
+    key: 'screen.ventes',
+    fetcher: fetchSalesData,
+    refreshSignal,
+  });
+  const { refreshing, onRefresh } = usePullToRefresh(() => reload('silent'));
+
+  const sales = data?.sales ?? [];
+  const invoices = data?.invoices ?? [];
 
   const salesCards = useMemo(() => toSaleCards(sales, invoices), [sales, invoices]);
 
@@ -168,7 +164,7 @@ export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) 
   }
 
   if (error) {
-    return <ErrorState title='Erreur ventes' message={error} onRetry={() => void loadSales()} />;
+    return <ErrorState title='Erreur ventes' message={error} onRetry={() => void reload('blocking')} />;
   }
 
   return (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -37,10 +37,16 @@ import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
 import { SegmentedControl, type SegmentedOption } from '../components/common/SegmentedControl';
 import { StatusBadge } from '../components/common/StatusBadge';
+import { useCachedResource } from '../hooks/useCachedResource';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface FacturesScreenProps {
   refreshSignal: number;
+}
+
+interface FacturesData {
+  invoices: InvoiceResponseDTO[];
+  sales: SaleResponseDTO[];
 }
 
 function parsePositiveAmount(raw: string): number | null {
@@ -61,12 +67,8 @@ function toPdfUrl(invoiceId: string): string {
 export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
   const { session } = useAuth();
   const fmtCurrency = useFormatCurrency();
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [invoices, setInvoices] = useState<InvoiceResponseDTO[]>([]);
-  const [sales, setSales] = useState<SaleResponseDTO[]>([]);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<'all' | InvoiceStatus>('all');
@@ -88,26 +90,30 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
 
-  const loadData = useCallback(async (showLoader: boolean = true) => {
-    if (showLoader) {
-      setLoading(true);
-    }
-    setError(null);
-    try {
-      const [fetchedInvoices, fetchedSales] = await Promise.all([listInvoices(), listSales()]);
-      setInvoices(fetchedInvoices);
-      setSales(fetchedSales);
-    } catch (loadError) {
-      setError(getErrorMessage(loadError));
-    } finally {
-      setLoading(false);
-    }
+  const fetchFacturesData = useCallback(async (): Promise<FacturesData> => {
+    const [fetchedInvoices, fetchedSales] = await Promise.all([listInvoices(), listSales()]);
+    return {
+      invoices: fetchedInvoices,
+      sales: fetchedSales,
+    };
   }, []);
 
-  useEffect(() => {
-    void loadData(true);
-  }, [loadData, refreshSignal]);
+  const { data, loading, error, reload } = useCachedResource({
+    key: 'screen.factures',
+    fetcher: fetchFacturesData,
+    refreshSignal,
+  });
+
+  const loadData = useCallback(
+    async (showLoader: boolean = true) => {
+      await reload(showLoader ? 'blocking' : 'silent');
+    },
+    [reload]
+  );
   const { refreshing, onRefresh } = usePullToRefresh(() => loadData(false));
+
+  const invoices = data?.invoices ?? [];
+  const sales = data?.sales ?? [];
 
   const statusOptions = useMemo<ChipOption[]>(
     () => [
@@ -198,7 +204,7 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
       });
 
       closeManualModal();
-      await loadData();
+      await loadData(false);
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {
@@ -216,7 +222,7 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
     try {
       await createInvoiceFromSale(selectedSaleId);
       closeFromSaleModal();
-      await loadData();
+      await loadData(false);
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {
@@ -262,7 +268,7 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
       });
 
       closePaymentModal();
-      await loadData();
+      await loadData(false);
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {

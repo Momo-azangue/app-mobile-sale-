@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
@@ -17,6 +17,7 @@ import { InputField } from '../components/common/InputField';
 import { LoadingState } from '../components/common/LoadingState';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
+import { useCachedResource } from '../hooks/useCachedResource';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface CategoriesScreenProps {
@@ -24,10 +25,7 @@ interface CategoriesScreenProps {
 }
 
 export function CategoriesScreen({ refreshSignal }: CategoriesScreenProps) {
-  const [categories, setCategories] = useState<CategoryResponseDTO[]>([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
@@ -38,25 +36,24 @@ export function CategoriesScreen({ refreshSignal }: CategoriesScreenProps) {
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
 
-  const loadCategories = useCallback(async (showLoader: boolean = true) => {
-    if (showLoader) {
-      setLoading(true);
-    }
-    setError(null);
-    try {
-      const fetched = await listCategories();
-      setCategories(fetched);
-    } catch (loadError) {
-      setError(getErrorMessage(loadError));
-    } finally {
-      setLoading(false);
-    }
+  const fetchCategories = useCallback(async (): Promise<CategoryResponseDTO[]> => {
+    return listCategories();
   }, []);
 
-  useEffect(() => {
-    void loadCategories(true);
-  }, [loadCategories, refreshSignal]);
+  const { data, loading, error, reload } = useCachedResource({
+    key: 'screen.categories',
+    fetcher: fetchCategories,
+    refreshSignal,
+  });
+
+  const loadCategories = useCallback(
+    async (showLoader: boolean = true) => {
+      await reload(showLoader ? 'blocking' : 'silent');
+    },
+    [reload]
+  );
   const { refreshing, onRefresh } = usePullToRefresh(() => loadCategories(false));
+  const categories = data ?? [];
 
   const filteredCategories = useMemo(() => {
     const lower = searchTerm.toLowerCase();
@@ -97,7 +94,7 @@ export function CategoriesScreen({ refreshSignal }: CategoriesScreenProps) {
       });
 
       closeCreateModal();
-      await loadCategories();
+      await loadCategories(false);
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {
@@ -114,7 +111,7 @@ export function CategoriesScreen({ refreshSignal }: CategoriesScreenProps) {
         onPress: async () => {
           try {
             await deleteCategory(category.id);
-            await loadCategories();
+            await loadCategories(false);
           } catch (deleteError) {
             Alert.alert('Erreur', getErrorMessage(deleteError));
           }
@@ -146,7 +143,7 @@ export function CategoriesScreen({ refreshSignal }: CategoriesScreenProps) {
         description: editDescription.trim() || undefined,
       });
       closeEditModal();
-      await loadCategories();
+      await loadCategories(false);
     } catch (updateError) {
       Alert.alert('Erreur', getErrorMessage(updateError));
     } finally {

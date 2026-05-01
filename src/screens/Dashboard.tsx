@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { listClients, listInvoices } from '../api/services';
-import { getErrorMessage } from '../api/errors';
 import { useFormatCurrency } from '../context/AppSettingsContext';
 import type { InvoiceResponseDTO } from '../types/api';
 import { colors, radius, shadows } from '../theme/tokens';
@@ -12,6 +11,7 @@ import { KPICard } from '../components/common/KPICard';
 import { LoadingState } from '../components/common/LoadingState';
 import { ErrorState } from '../components/common/ErrorState';
 import { ScreenHeader } from '../components/common/ScreenHeader';
+import { useCachedResource } from '../hooks/useCachedResource';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface DashboardScreenProps {
@@ -21,6 +21,11 @@ interface DashboardScreenProps {
 interface DayAggregate {
   day: string;
   value: number;
+}
+
+interface DashboardData {
+  invoices: InvoiceResponseDTO[];
+  clientsCount: number;
 }
 
 const DAYS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
@@ -70,32 +75,24 @@ function buildSalesTrend(invoices: InvoiceResponseDTO[]): DayAggregate[] {
 
 export function DashboardScreen({ refreshSignal }: DashboardScreenProps) {
   const fmtCurrency = useFormatCurrency();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [invoices, setInvoices] = useState<InvoiceResponseDTO[]>([]);
-  const [clientsCount, setClientsCount] = useState(0);
 
-  const loadDashboard = useCallback(async (showLoader: boolean = true) => {
-    if (showLoader) {
-      setLoading(true);
-    }
-    setError(null);
-
-    try {
-      const [fetchedInvoices, fetchedClients] = await Promise.all([listInvoices(), listClients()]);
-      setInvoices(fetchedInvoices);
-      setClientsCount(fetchedClients.length);
-    } catch (loadError) {
-      setError(getErrorMessage(loadError));
-    } finally {
-      setLoading(false);
-    }
+  const fetchDashboard = useCallback(async (): Promise<DashboardData> => {
+    const [fetchedInvoices, fetchedClients] = await Promise.all([listInvoices(), listClients()]);
+    return {
+      invoices: fetchedInvoices,
+      clientsCount: fetchedClients.length,
+    };
   }, []);
 
-  useEffect(() => {
-    void loadDashboard(true);
-  }, [loadDashboard, refreshSignal]);
-  const { refreshing, onRefresh } = usePullToRefresh(() => loadDashboard(false));
+  const { data, loading, error, reload } = useCachedResource({
+    key: 'screen.dashboard',
+    fetcher: fetchDashboard,
+    refreshSignal,
+  });
+  const { refreshing, onRefresh } = usePullToRefresh(() => reload('silent'));
+
+  const invoices = data?.invoices ?? [];
+  const clientsCount = data?.clientsCount ?? 0;
 
   const kpis = useMemo(() => {
     const today = new Date();
@@ -139,7 +136,7 @@ export function DashboardScreen({ refreshSignal }: DashboardScreenProps) {
   }
 
   if (error) {
-    return <ErrorState title='Erreur dashboard' message={error} onRetry={() => void loadDashboard()} />;
+    return <ErrorState title='Erreur dashboard' message={error} onRetry={() => void reload('blocking')} />;
   }
 
   return (

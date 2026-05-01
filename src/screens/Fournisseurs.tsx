@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
@@ -17,6 +17,7 @@ import { InputField } from '../components/common/InputField';
 import { LoadingState } from '../components/common/LoadingState';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
+import { useCachedResource } from '../hooks/useCachedResource';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
 interface FournisseursScreenProps {
@@ -24,10 +25,7 @@ interface FournisseursScreenProps {
 }
 
 export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
-  const [providers, setProviders] = useState<ProviderResponseDTO[]>([]);
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
@@ -42,25 +40,24 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
   const [editPhone, setEditPhone] = useState('');
   const [editAddress, setEditAddress] = useState('');
 
-  const loadProviders = useCallback(async (showLoader: boolean = true) => {
-    if (showLoader) {
-      setLoading(true);
-    }
-    setError(null);
-    try {
-      const fetched = await listProviders();
-      setProviders(fetched);
-    } catch (loadError) {
-      setError(getErrorMessage(loadError));
-    } finally {
-      setLoading(false);
-    }
+  const fetchProviders = useCallback(async (): Promise<ProviderResponseDTO[]> => {
+    return listProviders();
   }, []);
 
-  useEffect(() => {
-    void loadProviders(true);
-  }, [loadProviders, refreshSignal]);
+  const { data, loading, error, reload } = useCachedResource({
+    key: 'screen.fournisseurs',
+    fetcher: fetchProviders,
+    refreshSignal,
+  });
+
+  const loadProviders = useCallback(
+    async (showLoader: boolean = true) => {
+      await reload(showLoader ? 'blocking' : 'silent');
+    },
+    [reload]
+  );
   const { refreshing, onRefresh } = usePullToRefresh(() => loadProviders(false));
+  const providers = data ?? [];
 
   const filteredProviders = useMemo(() => {
     const lower = searchTerm.toLowerCase();
@@ -107,7 +104,7 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
       });
 
       closeCreateModal();
-      await loadProviders();
+      await loadProviders(false);
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {
@@ -124,7 +121,7 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
         onPress: async () => {
           try {
             await deleteProvider(provider.id);
-            await loadProviders();
+            await loadProviders(false);
           } catch (deleteError) {
             Alert.alert('Erreur', getErrorMessage(deleteError));
           }
@@ -161,7 +158,7 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
       });
 
       closeEditModal();
-      await loadProviders();
+      await loadProviders(false);
     } catch (updateError) {
       Alert.alert('Erreur', getErrorMessage(updateError));
     } finally {
