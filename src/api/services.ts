@@ -21,6 +21,7 @@ import type {
   InvoiceStatus,
   InvoicesSummaryResponseDTO,
   NotificationResponseDTO,
+  LowStockEntryResponseDTO,
   PagedResponse,
   PaymentMethod,
   PaymentResponseDTO,
@@ -51,6 +52,7 @@ import type {
   UserResponseDTO,
   UserStatus,
   UserStatusUpdateRequestDTO,
+  VariantLookupResponseDTO,
   VerifyEmailConfirmRequestDTO,
   VerifyEmailRequestDTO,
 } from '../types/api';
@@ -196,6 +198,28 @@ function compactParams<T extends Record<string, unknown>>(params: T): Record<str
     out[key] = value;
   }
   return out;
+}
+
+type RawProductVariantResponseDTO = ProductVariantResponseDTO & {
+  quantity?: number;
+  stock?: number;
+};
+
+function normalizeProductVariant(variant: RawProductVariantResponseDTO): ProductVariantResponseDTO {
+  return {
+    ...variant,
+    quantity: variant.quantity ?? variant.stock ?? 0,
+    minStock: variant.minStock ?? 0,
+    consignedQuantity: variant.consignedQuantity ?? 0,
+    consignment: variant.consignment ?? false,
+  };
+}
+
+function normalizeVariantLookup(data: VariantLookupResponseDTO): VariantLookupResponseDTO {
+  return {
+    ...data,
+    variant: data.variant ? normalizeProductVariant(data.variant) : data.variant,
+  };
 }
 
 export async function login(email: string, password: string): Promise<AuthResponseDTO> {
@@ -370,18 +394,26 @@ export async function getProduct(productId: string): Promise<ProductResponseDTO>
   return data;
 }
 
-export async function listLowStockProducts(threshold?: number): Promise<ProductResponseDTO[]> {
-  const { data } = await api.get<ProductResponseDTO[]>('/api/v1/products/low-stock', {
+export async function listLowStockVariants(threshold?: number): Promise<LowStockEntryResponseDTO[]> {
+  const { data } = await api.get<LowStockEntryResponseDTO[]>('/api/v1/products/low-stock', {
     params: compactParams({ threshold }),
   });
   return data;
 }
 
-export async function getProductByBarcode(code: string): Promise<ProductResponseDTO> {
-  const { data } = await api.get<ProductResponseDTO>(
+export async function listLowStockProducts(threshold?: number): Promise<LowStockEntryResponseDTO[]> {
+  return listLowStockVariants(threshold);
+}
+
+export async function getByBarcode(code: string): Promise<VariantLookupResponseDTO> {
+  const { data } = await api.get<VariantLookupResponseDTO>(
     `/api/v1/products/by-barcode/${encodeURIComponent(code)}`
   );
-  return data;
+  return normalizeVariantLookup(data);
+}
+
+export async function getProductByBarcode(code: string): Promise<VariantLookupResponseDTO> {
+  return getByBarcode(code);
 }
 
 // ── Product Variants (nested under /products/{productId}/variants) ────────────
@@ -389,31 +421,31 @@ export async function getProductByBarcode(code: string): Promise<ProductResponse
 export async function listProductVariants(
   productId: string
 ): Promise<ProductVariantResponseDTO[]> {
-  const { data } = await api.get<ProductVariantResponseDTO[]>(
+  const { data } = await api.get<RawProductVariantResponseDTO[]>(
     `/api/v1/products/${productId}/variants`
   );
-  return data;
+  return data.map(normalizeProductVariant);
 }
 
 export async function getProductVariant(
   productId: string,
   variantId: string
 ): Promise<ProductVariantResponseDTO> {
-  const { data } = await api.get<ProductVariantResponseDTO>(
+  const { data } = await api.get<RawProductVariantResponseDTO>(
     `/api/v1/products/${productId}/variants/${variantId}`
   );
-  return data;
+  return normalizeProductVariant(data);
 }
 
 export async function createProductVariant(
   productId: string,
   payload: ProductVariantRequestDTO
 ): Promise<ProductVariantResponseDTO> {
-  const { data } = await api.post<ProductVariantResponseDTO>(
+  const { data } = await api.post<RawProductVariantResponseDTO>(
     `/api/v1/products/${productId}/variants`,
     payload
   );
-  return data;
+  return normalizeProductVariant(data);
 }
 
 export async function updateProductVariant(
@@ -421,11 +453,11 @@ export async function updateProductVariant(
   variantId: string,
   payload: ProductVariantRequestDTO
 ): Promise<ProductVariantResponseDTO> {
-  const { data } = await api.put<ProductVariantResponseDTO>(
+  const { data } = await api.put<RawProductVariantResponseDTO>(
     `/api/v1/products/${productId}/variants/${variantId}`,
     payload
   );
-  return data;
+  return normalizeProductVariant(data);
 }
 
 export async function deleteProductVariant(
@@ -465,7 +497,7 @@ export async function listProductUnits(params: {
 
 export async function listAvailableProductUnits(
   productId: string,
-  variantId?: string
+  variantId: string
 ): Promise<ProductUnitResponseDTO[]> {
   const { data } = await api.get<ProductUnitResponseDTO[]>('/api/v1/product-units/available', {
     params: { productId, variantId },

@@ -48,6 +48,7 @@ function AppShell() {
   // pour pas perdre la consultation en cours quand l'utilisateur va
   // vérifier autre chose ; reset explicite via le bouton retour.
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
+  const [selectedProductVariantId, setSelectedProductVariantId] = useState<string | null>(null);
   const [refreshSignal, setRefreshSignal] = useState(0);
   const appStateRef = useRef(AppState.currentState);
 
@@ -64,6 +65,7 @@ function AppShell() {
    */
   const handleTabChange = useCallback((tab: NavigationTab) => {
     setSelectedProductId(null);
+    setSelectedProductVariantId(null);
     setActiveTab(tab);
   }, []);
 
@@ -137,8 +139,12 @@ function AppShell() {
           return (
             <ProductDetailScreen
               productId={selectedProductId}
+              highlightedVariantId={selectedProductVariantId}
               refreshSignal={refreshSignal}
-              onBack={() => setSelectedProductId(null)}
+              onBack={() => {
+                setSelectedProductId(null);
+                setSelectedProductVariantId(null);
+              }}
             />
           );
         }
@@ -146,7 +152,10 @@ function AppShell() {
           <StocksScreen
             refreshSignal={refreshSignal}
             onProductChanged={bumpRefresh}
-            onSelectProduct={(productId) => setSelectedProductId(productId)}
+            onSelectProduct={(productId, highlightedVariantId) => {
+              setSelectedProductId(productId);
+              setSelectedProductVariantId(highlightedVariantId ?? null);
+            }}
           />
         );
       case 'clients':
@@ -170,7 +179,7 @@ function AppShell() {
       default:
         return <DashboardScreen refreshSignal={refreshSignal} />;
     }
-  }, [activeTab, bumpRefresh, logout, refreshSignal, selectedProductId, session, showNewSale]);
+  }, [activeTab, bumpRefresh, logout, refreshSignal, selectedProductId, selectedProductVariantId, session, showNewSale]);
 
   if (isBooting) {
     return (

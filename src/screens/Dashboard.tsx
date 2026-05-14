@@ -6,13 +6,13 @@ import {
   getInvoicesSummary,
   getSalesSummary,
   listClientsPage,
-  listLowStockProducts,
+  listLowStockVariants,
 } from '../api/services';
 import { getErrorMessage } from '../api/errors';
 import { useFormatCurrency } from '../context/AppSettingsContext';
 import type {
   InvoicesSummaryResponseDTO,
-  ProductResponseDTO,
+  LowStockEntryResponseDTO,
   SalesSummaryResponseDTO,
 } from '../types/api';
 import { colors, radius, shadows } from '../theme/tokens';
@@ -39,7 +39,7 @@ type SectionResult<T> = { ok: true; value: T } | { ok: false; error: string };
 interface DashboardData {
   salesToday: SectionResult<SalesSummaryResponseDTO>;
   invoices: SectionResult<InvoicesSummaryResponseDTO>;
-  lowStock: SectionResult<ProductResponseDTO[]>;
+  lowStock: SectionResult<LowStockEntryResponseDTO[]>;
   clientsCount: SectionResult<number>;
 }
 
@@ -63,7 +63,7 @@ export function DashboardScreen({ refreshSignal }: DashboardScreenProps) {
     const [salesToday, invoices, lowStock, clientsCount] = await Promise.all([
       safeCall(() => getSalesSummary('today')),
       safeCall(() => getInvoicesSummary()),
-      safeCall(() => listLowStockProducts()),
+      safeCall(() => listLowStockVariants()),
       safeCall(async () => (await listClientsPage({ page: 0, size: 1 })).totalElements),
     ]);
     return { salesToday, invoices, lowStock, clientsCount };
@@ -211,9 +211,9 @@ export function DashboardScreen({ refreshSignal }: DashboardScreenProps) {
               </Text>
             </View>
             <View style={styles.lowStockList}>
-              {lowStockPreview.map((product) => (
-                <Text key={product.id} style={styles.lowStockItem} numberOfLines={1}>
-                  {`• ${product.name} — ${product.quantity ?? 0} restants`}
+              {lowStockPreview.map((entry) => (
+                <Text key={entry.variantId} style={styles.lowStockItem} numberOfLines={1}>
+                  {`• ${entry.productName}${entry.variantLabel ? ` • ${entry.variantLabel}` : ''} — ${entry.quantity} restants`}
                 </Text>
               ))}
               {lowStockExtra > 0 ? (

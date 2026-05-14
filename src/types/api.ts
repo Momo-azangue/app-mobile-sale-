@@ -192,22 +192,10 @@ export interface ProductResponseDTO {
   sku?: string;
   barcode?: string;
   price?: number;
+  description?: string;
   categoryId?: string;
   categoryName?: string;
-  /** Stock fongible courant (mode NONE). En SERIAL, dérivé des unités IN_STOCK. */
-  quantity?: number;
-  /** Seuil d'alerte stock faible. 0 = pas d'alerte. */
-  minStock?: number;
   trackingMode?: TrackingMode;
-  /** Le produit est-il consigné chez un fournisseur ? */
-  consignment?: boolean;
-  providerId?: string;
-  /** Snapshot dénormalisé du nom du fournisseur (mis à jour à create/update). */
-  providerName?: string;
-  /** Prix d'achat fournisseur de référence. */
-  providerPrice?: number;
-  /** Compteur agrégé des unités consignées encore en stock. Lecture seule. */
-  consignedQuantity?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -218,25 +206,33 @@ export interface ProductRequestDTO {
   sku?: string;
   barcode?: string;
   price: number;
-  /** Seuil d'alerte stock faible. */
-  minStock?: number;
+  description?: string;
   categoryId: string;
   trackingMode?: TrackingMode;
-  /** Si true, providerId obligatoire. */
-  consignment?: boolean;
-  providerId?: string;
-  providerPrice?: number;
 }
 
 export interface ProductVariantResponseDTO {
   id: string;
   productId: string;
+  productName?: string;
+  productBrand?: string;
+  productTrackingMode?: TrackingMode;
+  categoryId?: string;
+  categoryName?: string;
   name?: string;
   sku?: string;
   barcode?: string;
   attributes?: Record<string, string>;
   price?: number;
-  stock: number;
+  quantity: number;
+  /** @deprecated Alias backend temporaire. Utiliser quantity. */
+  stock?: number;
+  minStock: number;
+  consignedQuantity: number;
+  consignment: boolean;
+  providerId?: string;
+  providerName?: string;
+  providerPrice?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -247,7 +243,27 @@ export interface ProductVariantRequestDTO {
   barcode?: string;
   attributes?: Record<string, string>;
   price?: number;
+  /** Alias backend temporaire pour quantity lors de la création. */
   stock?: number;
+  minStock?: number;
+  consignment?: boolean;
+  providerId?: string;
+  providerPrice?: number;
+}
+
+export interface LowStockEntryResponseDTO {
+  productId: string;
+  productName: string;
+  variantId: string;
+  variantLabel?: string;
+  quantity: number;
+  minStock: number;
+  consignedQuantity: number;
+}
+
+export interface VariantLookupResponseDTO {
+  product: ProductResponseDTO;
+  variant?: ProductVariantResponseDTO | null;
 }
 
 export interface ProductItemResponseDTO {
@@ -277,10 +293,10 @@ export type PaymentMethod = 'CASH' | 'MOBILE_MONEY' | 'CARTE';
 
 export interface SaleCreateProductItemDTO {
   productId: string;
-  /** Optionnel : la variante par défaut du produit est utilisée si non fourni. */
-  variantId?: string;
+  variantId: string;
   quantity: number;
   priceAtSale: number;
+  preferConsigned?: boolean;
   serialNumbers?: string[];
 }
 
@@ -306,7 +322,7 @@ export interface InvoiceLineDTO {
 export interface ProductUnitResponseDTO {
   id: string;
   productId: string;
-  variantId?: string;
+  variantId: string;
   serialNumber: string;
   status: ProductUnitStatus;
   providerId?: string;
@@ -394,7 +410,7 @@ export type MovementSource =
 export interface StockMovementResponseDTO {
   id: string;
   productId: string;
-  variantId?: string;
+  variantId: string;
   quantity: number;
   type: MovementType;
   source?: MovementSource;
@@ -419,8 +435,7 @@ export interface StockMovementResponseDTO {
 
 export interface StockMovementRequestDTO {
   productId: string;
-  /** Optionnel : la variante par défaut du produit est utilisée si non fourni. */
-  variantId?: string;
+  variantId: string;
   quantity: number;
   type: MovementType;
   source?: MovementSource;

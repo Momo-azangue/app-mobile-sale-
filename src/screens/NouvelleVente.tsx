@@ -40,11 +40,11 @@ interface NouvelleVenteProps {
 interface SaleLineForm {
   id: string;
   productId: string;
-  /** Vide = la variante par defaut sera resolue par le backend. */
   variantId: string;
   quantity: string;
   priceAtSale: string;
   serialNumbers: string;
+  preferConsigned: boolean;
 }
 
 const STATUS_OPTIONS: Array<{ label: string; value: InvoiceStatus }> = [
@@ -64,6 +64,16 @@ function parseSerialNumbers(value: string): string[] {
     .filter(Boolean);
 }
 
+function variantLabel(variant: ProductVariantResponseDTO): string {
+  if (variant.name?.trim()) {
+    return variant.name.trim();
+  }
+  const attributes = Object.values(variant.attributes ?? {})
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return attributes.length ? attributes.join(' • ') : 'Variante standard';
+}
+
 export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: NouvelleVenteProps) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -77,7 +87,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   const [status, setStatus] = useState<InvoiceStatus>('IMPAYE');
   const [initialPaidAmount, setInitialPaidAmount] = useState('');
   const [lines, setLines] = useState<SaleLineForm[]>([
-    { id: nextLineId(), productId: '', variantId: '', quantity: '1', priceAtSale: '', serialNumbers: '' },
+    { id: nextLineId(), productId: '', variantId: '', quantity: '1', priceAtSale: '', serialNumbers: '', preferConsigned: false },
   ]);
 
   // Cache productId -> variantes nommées (excluant la default sans nom).
@@ -167,7 +177,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   const addLine = () => {
     setLines((previous) => [
       ...previous,
-      { id: nextLineId(), productId: '', variantId: '', quantity: '1', priceAtSale: '', serialNumbers: '' },
+      { id: nextLineId(), productId: '', variantId: '', quantity: '1', priceAtSale: '', serialNumbers: '', preferConsigned: false },
     ]);
   };
 
@@ -189,8 +199,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
     if (!productId || variantsByProduct[productId] !== undefined) return;
     try {
       const variants = await listProductVariants(productId);
-      const named = variants.filter((v) => v.name && v.name.trim().length > 0);
-      setVariantsByProduct((prev) => ({ ...prev, [productId]: named }));
+      setVariantsByProduct((prev) => ({ ...prev, [productId]: variants }));
     } catch {
       // Silencieux : si on ne peut pas charger, on ne montre juste pas le picker
       setVariantsByProduct((prev) => ({ ...prev, [productId]: [] }));
@@ -199,7 +208,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
 
   const loadAvailableUnitsForLine = useCallback(async (lineId: string, productId: string, variantId?: string) => {
     const selectedProduct = productById.get(productId);
-    if (!productId || selectedProduct?.trackingMode !== 'SERIAL') {
+    if (!productId || !variantId || selectedProduct?.trackingMode !== 'SERIAL') {
       setAvailableUnitsByLine((previous) => ({ ...previous, [lineId]: [] }));
       setLoadingUnitsByLine((previous) => ({ ...previous, [lineId]: false }));
       return;
@@ -207,7 +216,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
 
     setLoadingUnitsByLine((previous) => ({ ...previous, [lineId]: true }));
     try {
-      const units = await listAvailableProductUnits(productId, variantId || undefined);
+      const units = await listAvailableProductUnits(productId, variantId);
       setAvailableUnitsByLine((previous) => ({ ...previous, [lineId]: units }));
     } catch {
       setAvailableUnitsByLine((previous) => ({ ...previous, [lineId]: [] }));
@@ -235,7 +244,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
 
       return {
         productId: line.productId,
-        variantId: line.variantId || undefined,
+        variantId: line.variantId,
         quantity,
         priceAtSale,
         serialNumbers: parseSerialNumbers(line.serialNumbers),
@@ -246,6 +255,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
     const invalidLine = mappedProducts.find(
       (line) =>
         !line.productId ||
+        !line.variantId ||
         !Number.isFinite(line.quantity) ||
         line.quantity <= 0 ||
         Math.trunc(line.quantity) !== line.quantity ||
@@ -254,7 +264,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
     );
 
     if (invalidLine) {
-      Alert.alert('Validation', 'Chaque ligne doit avoir un produit, une quantite entiere > 0 et un prix > 0.');
+      Alert.alert('Validation', 'Chaque ligne doit avoir un produit, une variante, une quantite entiere > 0 et un prix > 0.');
       return null;
     }
 
@@ -338,6 +348,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
         variantId: line.variantId,
         quantity: line.quantity,
         priceAtSale: line.priceAtSale,
+        preferConsigned: false,
         serialNumbers: line.selectedProduct?.trackingMode === 'SERIAL' ? line.serialNumbers : undefined,
       })),
       date: new Date().toISOString(),
@@ -485,9 +496,9 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
         const loadingUnits = loadingUnitsByLine[line.id] ?? false;
         const typedSerialNumbers = parseSerialNumbers(line.serialNumbers);
         const variantOptions: SearchableSelectOption[] = variantsForProduct.map((v) => ({
-          label: v.name ?? 'Variante',
+          label: variantLabel(v),
           value: v.id,
-          subtitle: v.price != null ? `Prix ${v.price}` : undefined,
+          subtitle: `Stock ${v.quantity}${v.consignedQuantity ? ` • Consigne ${v.consignedQuantity}` : ''}${v.price != null ? ` • Prix ${v.price}` : ''}`,
         }));
         return (
           <AppCard key={line.id} style={styles.lineCard}>
@@ -507,17 +518,18 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
               onChange={(value) => handleProductChange(line.id, value)}
             />
 
-            {variantsForProduct.length > 0 ? (
+            {line.productId ? (
               <SearchableSelectField
                 label='Variante'
                 modalTitle='Selectionner une variante'
-                placeholder='Choisir une variante (sinon defaut)'
+                placeholder={variantsForProduct.length === 0 ? 'Aucune variante disponible' : 'Choisir une variante'}
                 value={line.variantId}
                 options={variantOptions}
                 onChange={(value) => {
                   updateLine(line.id, { variantId: value, serialNumbers: '' });
                   void loadAvailableUnitsForLine(line.id, line.productId, value);
                 }}
+                disabled={variantsForProduct.length === 0}
               />
             ) : null}
 
