@@ -2,7 +2,13 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { PropsWithChildren } from 'react';
 
 import { clearSession, loadSession, persistSession } from '../api/storage';
-import { login, logout as logoutRequest, refresh, registerAdminAndTenant } from '../api/services';
+import {
+  getCurrentUser,
+  login,
+  logout as logoutRequest,
+  refresh,
+  registerAdminAndTenant,
+} from '../api/services';
 import { configureHttpAuth } from '../api/http';
 import { clearMemoryCache } from '../api/memoryCache';
 import type { AuthResponseDTO, RegisterRequestDTO, SessionState } from '../types/api';
@@ -47,6 +53,31 @@ export function AuthProvider({ children }: PropsWithChildren) {
     await clearSession();
   }, []);
 
+  /**
+   * Complète une session basique avec le profil utilisateur via {@code GET /users/me}.
+   * Best-effort : si l'appel échoue (offline, timeout), la session est tout de même
+   * appliquée avec {@code userId}/{@code status} undefined — l'app reste utilisable.
+   */
+  const enrichWithProfile = useCallback(async (base: SessionState): Promise<SessionState> => {
+    // L'appel /users/me lit le token via l'intercepteur axios. On configure
+    // donc temporairement le sessionRef pour que getAccessToken() trouve la
+    // bonne valeur. La session officielle est posée *après* l'enrichissement.
+    sessionRef.current = base;
+    try {
+      const me = await getCurrentUser();
+      return {
+        ...base,
+        userId: me.id ?? base.userId,
+        name: me.name ?? base.name,
+        role: me.role ?? base.role,
+        status: me.status ?? base.status,
+      };
+    } catch {
+      // Tolérant : on continue avec la session basique.
+      return base;
+    }
+  }, []);
+
   const refreshAccessToken = useCallback(async (): Promise<string | null> => {
     if (refreshPromiseRef.current) {
       return refreshPromiseRef.current;
@@ -65,9 +96,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
         accessToken: refreshed.accessToken,
         refreshToken: refreshed.refreshToken ?? currentSession.refreshToken,
         tenantId: refreshed.tenantId ?? currentSession.tenantId,
+        userId: currentSession.userId,
         name: refreshed.name ?? currentSession.name,
         email: refreshed.email ?? currentSession.email,
         role: refreshed.role ?? currentSession.role,
+        status: currentSession.status,
         tokenType: refreshed.tokenType ?? currentSession.tokenType,
       };
 
@@ -114,60 +147,46 @@ export function AuthProvider({ children }: PropsWithChildren) {
     };
   }, []);
 
-  const loginWithPassword = useCallback(async (email: string, password: string) => {
-    const toSessionState = (auth: AuthResponseDTO): SessionState => {
-      if (!auth.refreshToken) {
-        throw new Error('No refresh token returned by API.');
-      }
+  const toBaseSession = (auth: AuthResponseDTO): SessionState => {
+    if (!auth.refreshToken) {
+      throw new Error('No refresh token returned by API.');
+    }
 
-      return {
-        accessToken: auth.accessToken,
-        refreshToken: auth.refreshToken,
-        tenantId: auth.tenantId,
-        name: auth.name,
-        email: auth.email,
-        role: auth.role,
-        tokenType: auth.tokenType,
-      };
+    return {
+      accessToken: auth.accessToken,
+      refreshToken: auth.refreshToken,
+      tenantId: auth.tenantId,
+      name: auth.name,
+      email: auth.email,
+      role: auth.role,
+      tokenType: auth.tokenType,
     };
+  };
 
+  const loginWithPassword = useCallback(async (email: string, password: string) => {
     setIsAuthenticating(true);
     try {
       const auth = await login(email, password);
-      const nextSession = toSessionState(auth);
-      await applySession(nextSession);
+      const baseSession = toBaseSession(auth);
+      const enriched = await enrichWithProfile(baseSession);
+      await applySession(enriched);
     } finally {
       setIsAuthenticating(false);
     }
-  }, [applySession]);
+  }, [applySession, enrichWithProfile]);
 
   const registerAndLogin = useCallback(async (payload: RegisterRequestDTO) => {
-    const toSessionState = (auth: AuthResponseDTO): SessionState => {
-      if (!auth.refreshToken) {
-        throw new Error('No refresh token returned by API.');
-      }
-
-      return {
-        accessToken: auth.accessToken,
-        refreshToken: auth.refreshToken,
-        tenantId: auth.tenantId,
-        name: auth.name,
-        email: auth.email,
-        role: auth.role,
-        tokenType: auth.tokenType,
-      };
-    };
-
     setIsAuthenticating(true);
     try {
       await registerAdminAndTenant(payload);
       const auth = await login(payload.user.email, payload.user.password);
-      const nextSession = toSessionState(auth);
-      await applySession(nextSession);
+      const baseSession = toBaseSession(auth);
+      const enriched = await enrichWithProfile(baseSession);
+      await applySession(enriched);
     } finally {
       setIsAuthenticating(false);
     }
-  }, [applySession]);
+  }, [applySession, enrichWithProfile]);
 
   const logout = useCallback(async () => {
     const refreshToken = sessionRef.current?.refreshToken;

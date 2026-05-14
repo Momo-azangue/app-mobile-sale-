@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { inviteUserToTenant, listInvitations } from '../api/services';
+import { inviteUserToTenant, listInvitations, revokeInvitation } from '../api/services';
 import { getErrorMessage } from '../api/errors';
 import type { InvitationResponseDTO, InvitationRole, InvitationStatus } from '../types/api';
 import { useAuth } from '../context/AuthContext';
@@ -27,7 +27,9 @@ interface InvitationsScreenProps {
 const statusMeta: Record<InvitationStatus, { label: string; text: string; bg: string }> = {
   PENDING: { label: 'En attente', text: colors.warning600, bg: colors.warning100 },
   ACCEPTED: { label: 'Acceptee', text: colors.success600, bg: colors.success100 },
+  DECLINED: { label: 'Refusee', text: colors.neutral600, bg: colors.neutral200 },
   EXPIRED: { label: 'Expiree', text: colors.danger600, bg: colors.danger100 },
+  REVOKED: { label: 'Revoquee', text: colors.neutral600, bg: colors.neutral200 },
 };
 
 export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
@@ -109,6 +111,29 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
     }
   };
 
+  const handleRevokeInvitation = (invitation: InvitationResponseDTO) => {
+    Alert.alert(
+      'Révoquer l\'invitation',
+      `Annuler l'invitation envoyée à ${invitation.email} ? Le lien d'invitation deviendra invalide.`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Révoquer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await revokeInvitation(invitation.id);
+              await loadInvitations(false);
+              Alert.alert('Succès', 'Invitation révoquée.');
+            } catch (revokeError) {
+              Alert.alert('Erreur', getErrorMessage(revokeError));
+            }
+          },
+        },
+      ],
+    );
+  };
+
   if (loading) {
     return <LoadingState message='Chargement invitations...' />;
   }
@@ -155,6 +180,16 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
                       Envoyee le {invitation.createdAt ? new Date(invitation.createdAt).toLocaleString() : '-'}
                     </Text>
                   </View>
+
+                  {invitation.status === 'PENDING' ? (
+                    <View style={styles.actionRowInline}>
+                      <AppButton
+                        label='Révoquer'
+                        variant='outline'
+                        onPress={() => handleRevokeInvitation(invitation)}
+                      />
+                    </View>
+                  ) : null}
                 </AppCard>
               );
             })}
@@ -280,6 +315,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 10,
     marginTop: 6,
+  },
+  actionRowInline: {
+    marginTop: 6,
+    alignSelf: 'flex-end',
   },
   actionItem: {
     flex: 1,

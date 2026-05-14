@@ -22,10 +22,28 @@ export function KPICard({ title, value, icon, trend }: KPICardProps) {
     <View style={styles.card}>
       <View style={styles.topRow}>
         <View style={styles.textWrap}>
-          <Text style={styles.title}>{title}</Text>
-          <Text style={styles.value}>{value}</Text>
+          <Text style={styles.title} numberOfLines={1}>
+            {title}
+          </Text>
+          {/*
+            Forcer la valeur sur une seule ligne avec auto-shrink : "750 000 F CFA"
+            ou "1 200 €" passent ainsi sans casser la grille KPI à 2 colonnes.
+            adjustsFontSizeToFit ramène la taille de typo.h2 (20px) jusqu'à 14px
+            si nécessaire — au-delà on tronque proprement.
+          */}
+          <Text
+            style={styles.value}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.7}
+          >
+            {value}
+          </Text>
           {trend ? (
-            <Text style={[styles.trend, { color: trend.positive ? colors.success600 : colors.danger600 }]}>
+            <Text
+              style={[styles.trend, { color: trend.positive ? colors.success600 : colors.danger600 }]}
+              numberOfLines={2}
+            >
               {trendPrefix} {trend.value}
             </Text>
           ) : null}
@@ -46,7 +64,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.neutral200,
     padding: 14,
-    minHeight: 106,
+    // height fixe (vs minHeight) — toutes les cards de la grille gardent la
+    // même taille même si l'une a un trend long et l'autre non. Évite la
+    // grille en escalier que l'on voyait sur Dashboard.
+    height: 124,
     ...shadows.sm,
   },
   topRow: {

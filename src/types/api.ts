@@ -93,10 +93,21 @@ export interface RegisterRequestDTO {
   tenant: TenantRequestDTO;
 }
 
+export type UserStatus = 'ACTIVE' | 'SUSPENDED' | 'BLOCKED' | 'REVOKED';
+
 export interface UserResponseDTO {
+  id?: string;
   name?: string;
   email: string;
   role: string;
+  status?: UserStatus;
+  statusChangedAt?: string;
+  statusReason?: string;
+}
+
+export interface UserStatusUpdateRequestDTO {
+  status: UserStatus;
+  reason?: string;
 }
 
 export interface SubscriptionPlanDTO {
@@ -155,7 +166,7 @@ export interface CategoryRequestDTO {
 }
 
 export type InvitationRole = 'ADMIN' | 'EMPLOYE';
-export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'EXPIRED';
+export type InvitationStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'EXPIRED' | 'REVOKED';
 
 export interface InviteUserRequestDTO {
   email: string;
@@ -172,15 +183,31 @@ export interface InvitationResponseDTO {
 }
 
 export type TrackingMode = 'NONE' | 'SERIAL';
+export type ProductUnitStatus = 'IN_STOCK' | 'SOLD' | 'RETURNED' | 'DAMAGED' | 'LOST';
 
 export interface ProductResponseDTO {
   id: string;
   name: string;
   brand?: string;
+  sku?: string;
+  barcode?: string;
   price?: number;
   categoryId?: string;
   categoryName?: string;
+  /** Stock fongible courant (mode NONE). En SERIAL, dérivé des unités IN_STOCK. */
+  quantity?: number;
+  /** Seuil d'alerte stock faible. 0 = pas d'alerte. */
+  minStock?: number;
   trackingMode?: TrackingMode;
+  /** Le produit est-il consigné chez un fournisseur ? */
+  consignment?: boolean;
+  providerId?: string;
+  /** Snapshot dénormalisé du nom du fournisseur (mis à jour à create/update). */
+  providerName?: string;
+  /** Prix d'achat fournisseur de référence. */
+  providerPrice?: number;
+  /** Compteur agrégé des unités consignées encore en stock. Lecture seule. */
+  consignedQuantity?: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -188,9 +215,17 @@ export interface ProductResponseDTO {
 export interface ProductRequestDTO {
   name: string;
   brand?: string;
+  sku?: string;
+  barcode?: string;
   price: number;
+  /** Seuil d'alerte stock faible. */
+  minStock?: number;
   categoryId: string;
   trackingMode?: TrackingMode;
+  /** Si true, providerId obligatoire. */
+  consignment?: boolean;
+  providerId?: string;
+  providerPrice?: number;
 }
 
 export interface ProductVariantResponseDTO {
@@ -221,6 +256,7 @@ export interface ProductItemResponseDTO {
   productName?: string;
   quantity: number;
   priceAtSale?: number;
+  serialNumbers?: string[];
   consignment?: boolean;
 }
 
@@ -245,6 +281,7 @@ export interface SaleCreateProductItemDTO {
   variantId?: string;
   quantity: number;
   priceAtSale: number;
+  serialNumbers?: string[];
 }
 
 export interface SaleRequestDTO {
@@ -262,7 +299,28 @@ export interface InvoiceLineDTO {
   quantity: number;
   unitPrice: number;
   total: number;
+  serialNumbers?: string[];
   consignment?: boolean;
+}
+
+export interface ProductUnitResponseDTO {
+  id: string;
+  productId: string;
+  variantId?: string;
+  serialNumber: string;
+  status: ProductUnitStatus;
+  providerId?: string;
+  origin?: MovementSource;
+  purchaseDate?: string;
+  soldDate?: string;
+  saleId?: string;
+  clientId?: string;
+  warrantyEndsAt?: string;
+}
+
+export interface ProductUnitStatusUpdateRequestDTO {
+  status: ProductUnitStatus;
+  reason?: string;
 }
 
 export interface InvoiceCreateRequestDTO {
@@ -280,6 +338,16 @@ export interface InvoiceCreateRequestDTO {
 export interface InvoicePaymentRequestDTO {
   montant: number;
   moyen: PaymentMethod;
+}
+
+export interface PaymentResponseDTO {
+  id: string;
+  invoiceId?: string;
+  saleId?: string;
+  montant: number;
+  date?: string;
+  moyen?: PaymentMethod;
+  tenantId?: string;
 }
 
 export interface InvoiceResponseDTO {
@@ -331,6 +399,18 @@ export interface StockMovementResponseDTO {
   type: MovementType;
   source?: MovementSource;
   date?: string;
+  /** Fournisseur source (entrées + consignations entrantes). */
+  providerId?: string;
+  /** Prix d'achat unitaire saisi sur les entrees stock. */
+  unitPurchasePrice?: number;
+  serialNumbers?: string[];
+  /** Client contrepartie (retours client). */
+  clientId?: string;
+  /** Vente associée (sortie sur vente, retour de vente). */
+  saleId?: string;
+  /** Référence libre (n° BL fournisseur, n° commande, n° retour). */
+  reference?: string;
+  /** @deprecated utiliser providerId/clientId/saleId. */
   sourceId?: string;
   destinationId?: string;
   operatorId?: string;
@@ -345,30 +425,133 @@ export interface StockMovementRequestDTO {
   type: MovementType;
   source?: MovementSource;
   date?: string;
+  /** Fournisseur source. Obligatoire pour CONSIGNATION_ENTREE. */
+  providerId?: string;
+  /** Prix d'achat unitaire saisi sur les entrees stock. */
+  unitPurchasePrice?: number;
+  serialNumbers?: string[];
+  /** Client contrepartie. Obligatoire pour RETOUR_CLIENT (avec saleId comme alternative). */
+  clientId?: string;
+  /** Vente associée. */
+  saleId?: string;
+  /** Référence libre (n° BL fournisseur, n° commande, n° retour). */
+  reference?: string;
+  /** @deprecated utiliser providerId/clientId/saleId. */
   sourceId?: string;
   destinationId?: string;
   operatorId?: string;
+  /** Obligatoire si source == AJUSTEMENT. */
   reason?: string;
 }
 
 export interface CommerceSettingsResponseDTO {
   id: string;
   nom: string;
+  adresse?: string;
   devise: string;
+  /**
+   * URL relative vers le logo si téléversé, ex {@code /api/v1/commerce-settings/{id}/logo}.
+   * Mis à jour automatiquement par le backend après chaque upload réussi.
+   */
+  logoUrl?: string;
+  facturePDFActive?: boolean;
 }
 
 export interface CommerceSettingsRequestDTO {
   nom: string;
+  adresse?: string;
   devise: string;
   facturePDFActive?: boolean;
+}
+
+// ── Reports / Dashboard agrégats ───────────────────────────────────────────────
+
+export type SalesSummaryPeriod = 'today' | '7d' | '30d';
+
+export interface SalesSummaryResponseDTO {
+  count: number;
+  total: number;
+  paidTotal: number;
+  unpaidTotal: number;
+}
+
+export interface InvoicesSummaryResponseDTO {
+  paye: number;
+  partiel: number;
+  impaye: number;
+  totalDue: number;
+}
+
+// ── User self-service ─────────────────────────────────────────────────────────
+
+export interface ChangePasswordRequestDTO {
+  currentPassword: string;
+  newPassword: string;
+}
+
+// ── Validation pré-formulaire des tokens ──────────────────────────────────────
+// Codes possibles (champ reason, lorsque valid=false) :
+//   MISSING / INVALID / EXPIRED — pour reset-password & verify-email
+//   MISSING / INVALID / EXPIRED / ACCEPTED / DECLINED / REVOKED — pour invitation
+export interface TokenValidationResponseDTO {
+  valid: boolean;
+  reason?: string;
+}
+
+export interface InvitationValidationResponseDTO {
+  valid: boolean;
+  reason?: string;
+  /** Renseignés uniquement quand valid=true, pour pré-remplir l'écran d'acceptation. */
+  email?: string;
+  role?: string;
+}
+
+// ── Notifications in-app ──────────────────────────────────────────────────────
+
+export type NotificationType =
+  | 'INVOICE_UNPAID'
+  | 'LOW_STOCK'
+  | 'SALE_CREATED'
+  | 'INVITATION_ACCEPTED'
+  | 'ACCOUNT_STATUS_CHANGED'
+  | 'GENERIC';
+
+export interface NotificationResponseDTO {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body?: string;
+  metadata?: Record<string, string>;
+  read: boolean;
+  readAt?: string;
+  createdAt?: string;
+}
+
+export interface UnreadCountResponseDTO {
+  unreadCount: number;
+}
+
+// ── Push tokens ───────────────────────────────────────────────────────────────
+
+export type PushPlatform = 'IOS' | 'ANDROID' | 'WEB';
+
+export interface RegisterPushTokenRequestDTO {
+  token: string;
+  platform: PushPlatform;
 }
 
 export interface SessionState {
   accessToken: string;
   refreshToken: string;
   tenantId: string;
+  /** Identifiant interne de l'utilisateur, résolu via {@code GET /users/me}
+   *  après le login. Peut être absent en attente du bootstrap profil. */
+  userId?: string;
   name?: string;
   email: string;
   role: string;
+  /** Statut administratif. Le login serveur refuse déjà les non-ACTIVE,
+   *  mais le champ est conservé pour l'UI (ex. badge "compte actif"). */
+  status?: UserStatus;
   tokenType: string;
 }

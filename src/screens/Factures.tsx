@@ -9,6 +9,7 @@ import {
   createInvoiceFromSale,
   downloadInvoicePdf,
   listInvoices,
+  listInvoicesPage,
   listSales,
   recordInvoicePayment,
 } from '../api/services';
@@ -90,16 +91,27 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
 
+  // Aligné sur la borne {@code @Max(100)} appliquée par InvoiceController.
+  const FILTERED_PAGE_SIZE = 100;
+  const isStatusFiltered = filter !== 'all';
+
   const fetchFacturesData = useCallback(async (): Promise<FacturesData> => {
+    if (isStatusFiltered) {
+      // Filtre statut serveur ({@code ?status=PAYE/PARTIEL/IMPAYE}) : on
+      // n'a plus besoin de filtrer les factures payées côté client.
+      const [invoicesPage, fetchedSales] = await Promise.all([
+        listInvoicesPage({ status: filter, size: FILTERED_PAGE_SIZE }),
+        listSales(),
+      ]);
+      return { invoices: invoicesPage.content, sales: fetchedSales };
+    }
     const [fetchedInvoices, fetchedSales] = await Promise.all([listInvoices(), listSales()]);
-    return {
-      invoices: fetchedInvoices,
-      sales: fetchedSales,
-    };
-  }, []);
+    return { invoices: fetchedInvoices, sales: fetchedSales };
+  }, [filter, isStatusFiltered]);
 
   const { data, loading, error, reload } = useCachedResource({
-    key: 'screen.factures',
+    // Cache séparé par statut filtré pour éviter les collisions au switch.
+    key: isStatusFiltered ? `screen.factures:status=${filter}` : 'screen.factures',
     fetcher: fetchFacturesData,
     refreshSignal,
   });
@@ -135,13 +147,13 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
   );
 
   const filteredInvoices = useMemo(() => {
+    // Le statut est désormais filtré côté serveur (cf. fetchFacturesData) ;
+    // on garde seulement la recherche libre côté client.
     return invoices.filter((invoice) => {
       const blob = `${invoice.invoiceNumber} ${invoice.clientName} ${invoice.clientEmail ?? ''}`.toLowerCase();
-      const matchesQuery = blob.includes(searchTerm.toLowerCase());
-      const matchesFilter = filter === 'all' ? true : invoice.statut === filter;
-      return matchesQuery && matchesFilter;
+      return blob.includes(searchTerm.toLowerCase());
     });
-  }, [filter, invoices, searchTerm]);
+  }, [invoices, searchTerm]);
 
   const closeManualModal = () => {
     setShowManualModal(false);
@@ -601,6 +613,9 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
                 <Text style={styles.saleItemMeta}>Quantite: {line.quantity}</Text>
                 <Text style={styles.saleItemMeta}>Prix unitaire: {fmtCurrency(line.unitPrice)}</Text>
                 <Text style={styles.saleItemMeta}>Total: {fmtCurrency(line.total)}</Text>
+                {line.serialNumbers && line.serialNumbers.length > 0 ? (
+                  <Text style={styles.saleItemMeta}>IMEI: {line.serialNumbers.join(', ')}</Text>
+                ) : null}
               </View>
             ))}
           </ScrollView>

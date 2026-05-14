@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import {
@@ -9,6 +9,7 @@ import {
   listMyTenantUsers,
   requestEmailVerification,
   updateMyTenant,
+  updateUserStatus,
 } from '../api/services';
 import { getErrorMessage } from '../api/errors';
 import { useAuth } from '../context/AuthContext';
@@ -22,7 +23,21 @@ import { AppButton } from '../components/common/AppButton';
 import { AppCard } from '../components/common/AppCard';
 import { InputField } from '../components/common/InputField';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
-import type { TenantResponseDTO, UserResponseDTO } from '../types/api';
+import type { TenantResponseDTO, UserResponseDTO, UserStatus } from '../types/api';
+
+const USER_STATUS_LABELS: Record<UserStatus, string> = {
+  ACTIVE: 'Actif',
+  SUSPENDED: 'Suspendu',
+  BLOCKED: 'Bloqué',
+  REVOKED: 'Révoqué',
+};
+
+const USER_STATUS_COLORS: Record<UserStatus, string> = {
+  ACTIVE: '#16a34a',     // vert
+  SUSPENDED: '#f59e0b',  // ambre
+  BLOCKED: '#dc2626',    // rouge
+  REVOKED: '#6b7280',    // gris
+};
 
 interface ParametresScreenProps {
   refreshSignal: number;
@@ -145,6 +160,67 @@ export function ParametresScreen({
     ]);
   };
 
+  /**
+   * Affiche les actions disponibles pour un user selon son statut courant.
+   * Le statut courant n'est pas proposé (pas de no-op).
+   */
+  const openUserActions = (user: UserResponseDTO) => {
+    if (!user.id) {
+      return;
+    }
+    const currentStatus = user.status ?? 'ACTIVE';
+    const allTransitions: Array<{ label: string; status: UserStatus; destructive?: boolean }> = [
+      { label: 'Réactiver', status: 'ACTIVE' },
+      { label: 'Suspendre (pause temporaire)', status: 'SUSPENDED' },
+      { label: 'Bloquer (sécurité)', status: 'BLOCKED', destructive: true },
+      { label: 'Révoquer (accès retiré)', status: 'REVOKED', destructive: true },
+    ];
+    const available = allTransitions.filter((t) => t.status !== currentStatus);
+
+    Alert.alert(
+      user.name ?? user.email,
+      `Statut actuel : ${USER_STATUS_LABELS[currentStatus]}`,
+      [
+        ...available.map((t) => ({
+          text: t.label,
+          style: t.destructive ? ('destructive' as const) : ('default' as const),
+          onPress: () => confirmStatusChange(user, t.status),
+        })),
+        { text: 'Annuler', style: 'cancel' as const },
+      ],
+    );
+  };
+
+  const confirmStatusChange = (user: UserResponseDTO, newStatus: UserStatus) => {
+    Alert.alert(
+      'Confirmer',
+      `Passer ${user.name ?? user.email} en statut "${USER_STATUS_LABELS[newStatus]}" ?`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Confirmer',
+          style: newStatus === 'ACTIVE' ? 'default' : 'destructive',
+          onPress: () => {
+            void applyStatusChange(user, newStatus);
+          },
+        },
+      ],
+    );
+  };
+
+  const applyStatusChange = async (user: UserResponseDTO, newStatus: UserStatus) => {
+    if (!user.id) {
+      return;
+    }
+    try {
+      await updateUserStatus(user.id, { status: newStatus });
+      Alert.alert('Succès', `${user.name ?? user.email} est maintenant ${USER_STATUS_LABELS[newStatus]}.`);
+      await loadSettings(false);
+    } catch (statusError) {
+      Alert.alert('Erreur', getErrorMessage(statusError));
+    }
+  };
+
   const handleSendVerification = async () => {
     if (!session?.email) {
       Alert.alert('Session', 'Aucun email de session disponible.');
@@ -262,15 +338,36 @@ export function ParametresScreen({
         {tenantUsers.length === 0 ? (
           <Text style={styles.note}>Aucun employe ou information non disponible.</Text>
         ) : (
-          tenantUsers.map((u) => (
-            <View key={u.email} style={styles.userRow}>
-              <View style={styles.userRowMain}>
-                <Text style={styles.accountValue}>{u.name ?? u.email}</Text>
-                <Text style={styles.accountLabel}>{u.email}</Text>
+          tenantUsers.map((u) => {
+            const userStatus = u.status ?? 'ACTIVE';
+            const isCurrentUser = session?.email && u.email
+              && session.email.toLowerCase() === u.email.toLowerCase();
+            return (
+              <View key={u.email} style={styles.userRow}>
+                <View style={styles.userRowMain}>
+                  <Text style={styles.accountValue}>{u.name ?? u.email}</Text>
+                  <Text style={styles.accountLabel}>{u.email}</Text>
+                  <View style={styles.userMetaRow}>
+                    <Text style={styles.userRowRole}>{u.role}</Text>
+                    <Text style={[styles.userStatusBadge, { color: USER_STATUS_COLORS[userStatus] }]}>
+                      • {USER_STATUS_LABELS[userStatus]}
+                    </Text>
+                  </View>
+                </View>
+                {isCurrentUser ? (
+                  <Text style={styles.userSelfTag}>Vous</Text>
+                ) : (
+                  <Pressable
+                    onPress={() => openUserActions(u)}
+                    style={styles.userActionsButton}
+                    hitSlop={10}
+                  >
+                    <Feather name='more-vertical' size={18} color={colors.neutral600} />
+                  </Pressable>
+                )}
               </View>
-              <Text style={styles.userRowRole}>{u.role}</Text>
-            </View>
-          ))
+            );
+          })
         )}
       </AppCard>
 
@@ -363,5 +460,23 @@ const styles = StyleSheet.create({
     ...typography.captionMedium,
     color: colors.primary600,
     textTransform: 'uppercase',
+  },
+  userMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 2,
+  },
+  userStatusBadge: {
+    ...typography.captionMedium,
+    textTransform: 'uppercase',
+  },
+  userSelfTag: {
+    ...typography.caption,
+    color: colors.neutral500,
+    fontStyle: 'italic',
+  },
+  userActionsButton: {
+    padding: 6,
   },
 });

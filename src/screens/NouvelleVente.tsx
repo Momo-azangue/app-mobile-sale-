@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { createSale, listClients, listProductVariants, listProducts } from '../api/services';
+import {
+  createSale,
+  listAvailableProductUnits,
+  listClients,
+  listProductVariants,
+  listProducts,
+} from '../api/services';
 import { getErrorMessage } from '../api/errors';
 import type {
   ClientResponseDTO,
   InvoiceStatus,
   ProductResponseDTO,
+  ProductUnitResponseDTO,
   ProductVariantResponseDTO,
   SaleRequestDTO,
 } from '../types/api';
@@ -19,6 +26,7 @@ import { ScreenHeader } from '../components/common/ScreenHeader';
 import { AppButton } from '../components/common/AppButton';
 import { AppCard } from '../components/common/AppCard';
 import { ChipGroup } from '../components/common/ChipGroup';
+import { ImeiInput } from '../components/common/ImeiInput';
 import { InputField } from '../components/common/InputField';
 import { SearchableSelectField, type SearchableSelectOption } from '../components/common/SearchableSelectField';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
@@ -36,6 +44,7 @@ interface SaleLineForm {
   variantId: string;
   quantity: string;
   priceAtSale: string;
+  serialNumbers: string;
 }
 
 const STATUS_OPTIONS: Array<{ label: string; value: InvoiceStatus }> = [
@@ -46,6 +55,13 @@ const STATUS_OPTIONS: Array<{ label: string; value: InvoiceStatus }> = [
 
 function nextLineId(): string {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function parseSerialNumbers(value: string): string[] {
+  return value
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: NouvelleVenteProps) {
@@ -61,15 +77,19 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   const [status, setStatus] = useState<InvoiceStatus>('IMPAYE');
   const [initialPaidAmount, setInitialPaidAmount] = useState('');
   const [lines, setLines] = useState<SaleLineForm[]>([
-    { id: nextLineId(), productId: '', variantId: '', quantity: '1', priceAtSale: '' },
+    { id: nextLineId(), productId: '', variantId: '', quantity: '1', priceAtSale: '', serialNumbers: '' },
   ]);
 
   // Cache productId -> variantes nommées (excluant la default sans nom).
   // Invalidé à chaque refreshSignal pour récupérer les variantes créées ailleurs (Stocks).
   const [variantsByProduct, setVariantsByProduct] = useState<Record<string, ProductVariantResponseDTO[]>>({});
+  const [availableUnitsByLine, setAvailableUnitsByLine] = useState<Record<string, ProductUnitResponseDTO[]>>({});
+  const [loadingUnitsByLine, setLoadingUnitsByLine] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setVariantsByProduct({});
+    setAvailableUnitsByLine({});
+    setLoadingUnitsByLine({});
   }, [refreshSignal]);
 
   const loadReferences = useCallback(async (showLoader: boolean = true) => {
@@ -147,12 +167,22 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   const addLine = () => {
     setLines((previous) => [
       ...previous,
-      { id: nextLineId(), productId: '', variantId: '', quantity: '1', priceAtSale: '' },
+      { id: nextLineId(), productId: '', variantId: '', quantity: '1', priceAtSale: '', serialNumbers: '' },
     ]);
   };
 
   const removeLine = (lineId: string) => {
     setLines((previous) => (previous.length > 1 ? previous.filter((line) => line.id !== lineId) : previous));
+    setAvailableUnitsByLine((previous) => {
+      const next = { ...previous };
+      delete next[lineId];
+      return next;
+    });
+    setLoadingUnitsByLine((previous) => {
+      const next = { ...previous };
+      delete next[lineId];
+      return next;
+    });
   };
 
   const ensureVariantsLoaded = useCallback(async (productId: string) => {
@@ -167,10 +197,30 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
     }
   }, [variantsByProduct]);
 
+  const loadAvailableUnitsForLine = useCallback(async (lineId: string, productId: string, variantId?: string) => {
+    const selectedProduct = productById.get(productId);
+    if (!productId || selectedProduct?.trackingMode !== 'SERIAL') {
+      setAvailableUnitsByLine((previous) => ({ ...previous, [lineId]: [] }));
+      setLoadingUnitsByLine((previous) => ({ ...previous, [lineId]: false }));
+      return;
+    }
+
+    setLoadingUnitsByLine((previous) => ({ ...previous, [lineId]: true }));
+    try {
+      const units = await listAvailableProductUnits(productId, variantId || undefined);
+      setAvailableUnitsByLine((previous) => ({ ...previous, [lineId]: units }));
+    } catch {
+      setAvailableUnitsByLine((previous) => ({ ...previous, [lineId]: [] }));
+    } finally {
+      setLoadingUnitsByLine((previous) => ({ ...previous, [lineId]: false }));
+    }
+  }, [productById]);
+
   const handleProductChange = (lineId: string, productId: string) => {
     // Reset variantId quand on change de produit (les variantes sont liées au produit)
-    updateLine(lineId, { productId, variantId: '' });
+    updateLine(lineId, { productId, variantId: '', serialNumbers: '' });
     void ensureVariantsLoaded(productId);
+    void loadAvailableUnitsForLine(lineId, productId);
   };
 
   const buildPayload = (): SaleRequestDTO | null => {
@@ -185,8 +235,10 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
 
       return {
         productId: line.productId,
+        variantId: line.variantId || undefined,
         quantity,
         priceAtSale,
+        serialNumbers: parseSerialNumbers(line.serialNumbers),
         selectedProduct: productById.get(line.productId),
       };
     });
@@ -196,12 +248,52 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
         !line.productId ||
         !Number.isFinite(line.quantity) ||
         line.quantity <= 0 ||
+        Math.trunc(line.quantity) !== line.quantity ||
         !Number.isFinite(line.priceAtSale) ||
         line.priceAtSale <= 0,
     );
 
     if (invalidLine) {
-      Alert.alert('Validation', 'Chaque ligne doit avoir un produit, une quantite > 0 et un prix > 0.');
+      Alert.alert('Validation', 'Chaque ligne doit avoir un produit, une quantite entiere > 0 et un prix > 0.');
+      return null;
+    }
+
+    const duplicateSerialLine = mappedProducts.find(
+      (line) => line.serialNumbers.length > 0 && new Set(line.serialNumbers).size !== line.serialNumbers.length,
+    );
+    if (duplicateSerialLine) {
+      Alert.alert('Validation', 'Un meme IMEI ne peut pas etre saisi plusieurs fois sur une ligne.');
+      return null;
+    }
+    const allSerialNumbers = mappedProducts.flatMap((line) => line.serialNumbers);
+    if (allSerialNumbers.length > 0 && new Set(allSerialNumbers).size !== allSerialNumbers.length) {
+      Alert.alert('Validation', 'Un meme IMEI ne peut pas etre vendu sur plusieurs lignes.');
+      return null;
+    }
+
+    const serialViolation = mappedProducts.find(
+      (line) =>
+        line.selectedProduct?.trackingMode === 'SERIAL'
+        && line.serialNumbers.length !== line.quantity,
+    );
+    if (serialViolation?.selectedProduct) {
+      Alert.alert(
+        'Validation',
+        `Le produit ${serialViolation.selectedProduct.name} exige exactement ${serialViolation.quantity} IMEI.`,
+      );
+      return null;
+    }
+
+    const nonSerialWithSerial = mappedProducts.find(
+      (line) =>
+        line.selectedProduct?.trackingMode !== 'SERIAL'
+        && line.serialNumbers.length > 0,
+    );
+    if (nonSerialWithSerial?.selectedProduct) {
+      Alert.alert(
+        'Validation',
+        `Les IMEI sont reserves aux produits SERIAL. Verifiez ${nonSerialWithSerial.selectedProduct.name}.`,
+      );
       return null;
     }
 
@@ -241,11 +333,12 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
 
     return {
       clientId,
-      products: lines.map((line) => ({
+      products: mappedProducts.map((line) => ({
         productId: line.productId,
-        variantId: line.variantId || undefined,
-        quantity: Number(line.quantity),
-        priceAtSale: Number(line.priceAtSale),
+        variantId: line.variantId,
+        quantity: line.quantity,
+        priceAtSale: line.priceAtSale,
+        serialNumbers: line.selectedProduct?.trackingMode === 'SERIAL' ? line.serialNumbers : undefined,
       })),
       date: new Date().toISOString(),
       invoiceStatus: status,
@@ -388,6 +481,9 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
       {lines.map((line, index) => {
         const selectedProduct = productById.get(line.productId);
         const variantsForProduct = variantsByProduct[line.productId] ?? [];
+        const availableUnits = availableUnitsByLine[line.id] ?? [];
+        const loadingUnits = loadingUnitsByLine[line.id] ?? false;
+        const typedSerialNumbers = parseSerialNumbers(line.serialNumbers);
         const variantOptions: SearchableSelectOption[] = variantsForProduct.map((v) => ({
           label: v.name ?? 'Variante',
           value: v.id,
@@ -418,7 +514,10 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
                 placeholder='Choisir une variante (sinon defaut)'
                 value={line.variantId}
                 options={variantOptions}
-                onChange={(value) => updateLine(line.id, { variantId: value })}
+                onChange={(value) => {
+                  updateLine(line.id, { variantId: value, serialNumbers: '' });
+                  void loadAvailableUnitsForLine(line.id, line.productId, value);
+                }}
               />
             ) : null}
 
@@ -426,6 +525,24 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
             <Text style={styles.selectedProductText}>
               Prix configure: {Number.isFinite(selectedProduct?.price) ? selectedProduct?.price : '-'}
             </Text>
+
+            {selectedProduct?.trackingMode === 'SERIAL' ? (
+              <View style={styles.serialBlock}>
+                <ImeiInput
+                  label='IMEI vendus'
+                  value={line.serialNumbers}
+                  onChangeText={(value) => updateLine(line.id, { serialNumbers: value })}
+                  placeholder='Un IMEI par ligne (ou scannez)'
+                  helperText={
+                    loadingUnits
+                      ? 'Chargement des IMEI disponibles...'
+                      : availableUnits.length > 0
+                        ? `${typedSerialNumbers.length}/${line.quantity || '0'} saisi(s). Disponibles : ${availableUnits.slice(0, 5).map((unit) => unit.serialNumber).join(', ')}${availableUnits.length > 5 ? '…' : ''}`
+                        : 'Aucun IMEI disponible pour cette selection.'
+                  }
+                />
+              </View>
+            ) : null}
 
             <View style={styles.row}>
               <InputField
@@ -530,6 +647,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     ...typography.caption,
     color: colors.neutral500,
+  },
+  serialBlock: {
+    marginTop: 8,
+    marginBottom: 10,
+    gap: 4,
+  },
+  multilineInput: {
+    minHeight: 96,
   },
   row: {
     flexDirection: 'row',

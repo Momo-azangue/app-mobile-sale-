@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
-import { listInvoices, listSales } from '../api/services';
+import { listInvoices, listInvoicesPage, listSales, listSalesPage } from '../api/services';
 import { useFormatCurrency } from '../context/AppSettingsContext';
 import { formatDate } from '../utils/format';
 import type { InvoiceResponseDTO, InvoiceStatus, SaleResponseDTO } from '../types/api';
@@ -45,30 +45,34 @@ interface VentesData {
 
 type PeriodFilter = 'all' | 'today' | '7d' | '30d';
 
-function matchPeriod(dateValue: string | undefined, period: PeriodFilter): boolean {
+// Aligné sur la borne {@code @Max(100)} appliquée côté backend (cf.
+// SaleController.getAllSales). Au-delà, on bascule sur le bulk via listSales()
+// qui itère lui-même via fetchAllPages.
+const FILTERED_PAGE_SIZE = 100;
+
+/**
+ * Convertit la période sélectionnée en intervalle ISO 8601 que le backend
+ * accepte sur {@code GET /sales?from=&to=}. {@code all} renvoie un objet vide
+ * (le serveur ne filtrera pas par date).
+ */
+function periodToRange(period: PeriodFilter): { from?: string; to?: string } {
   if (period === 'all') {
-    return true;
+    return {};
   }
-  if (!dateValue) {
-    return false;
-  }
-
-  const targetDate = new Date(dateValue);
-  if (Number.isNaN(targetDate.getTime())) {
-    return false;
-  }
-
   const now = new Date();
+  const to = now.toISOString();
+
   if (period === 'today') {
-    const today = now.toDateString();
-    return targetDate.toDateString() === today;
+    const start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    return { from: start.toISOString(), to };
   }
 
   const days = period === '7d' ? 7 : 30;
   const start = new Date(now);
   start.setHours(0, 0, 0, 0);
   start.setDate(start.getDate() - (days - 1));
-  return targetDate >= start && targetDate <= now;
+  return { from: start.toISOString(), to };
 }
 
 function toSaleCards(sales: SaleResponseDTO[], invoices: InvoiceResponseDTO[]): SaleCardData[] {
@@ -107,16 +111,29 @@ export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) 
   const [showExtraFilters, setShowExtraFilters] = useState(false);
   const [selectedSale, setSelectedSale] = useState<SaleCardData | null>(null);
 
+  const range = useMemo(() => periodToRange(periodFilter), [periodFilter]);
+  const hasServerFilter = Boolean(range.from);
+
   const fetchSalesData = useCallback(async (): Promise<VentesData> => {
+    if (hasServerFilter) {
+      // Côté serveur on ramène uniquement la fenêtre demandée — gain réseau
+      // pour les commerces avec un long historique. Le statut paiement
+      // reste filtré côté client (jointure ventes ↔ factures).
+      const [salesPage, invoicesPage] = await Promise.all([
+        listSalesPage({ from: range.from, to: range.to, size: FILTERED_PAGE_SIZE }),
+        listInvoicesPage({ from: range.from, to: range.to, size: FILTERED_PAGE_SIZE }),
+      ]);
+      return { sales: salesPage.content, invoices: invoicesPage.content };
+    }
+    // Pas de filtre période : on garde le bulk avec cache offline.
     const [fetchedSales, fetchedInvoices] = await Promise.all([listSales(), listInvoices()]);
-    return {
-      sales: fetchedSales,
-      invoices: fetchedInvoices,
-    };
-  }, []);
+    return { sales: fetchedSales, invoices: fetchedInvoices };
+  }, [hasServerFilter, range.from, range.to]);
 
   const { data, loading, error, reload } = useCachedResource({
-    key: 'screen.ventes',
+    // Clé du cache mémoire dépend de la fenêtre serveur — un changement de
+    // période déclenche un re-fetch propre sans collisions.
+    key: hasServerFilter ? `screen.ventes:${range.from}:${range.to}` : 'screen.ventes',
     fetcher: fetchSalesData,
     refreshSignal,
   });
@@ -128,16 +145,18 @@ export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) 
   const salesCards = useMemo(() => toSaleCards(sales, invoices), [sales, invoices]);
 
   const filteredSales = useMemo(() => {
+    // La période est désormais filtrée côté serveur (cf. fetchSalesData) ;
+    // on ne fait plus de matchPeriod en local. Restent en client : statut
+    // paiement (qui dépend de la jointure facture) et la recherche libre.
     return salesCards.filter((sale) => {
       const lowerQuery = searchTerm.toLowerCase();
       const matchQuery =
         sale.clientName.toLowerCase().includes(lowerQuery)
         || String(sale.montantTotal).includes(lowerQuery);
       const matchFilter = filter === 'all' ? true : sale.status === filter;
-      const matchDate = matchPeriod(sale.date, periodFilter);
-      return matchQuery && matchFilter && matchDate;
+      return matchQuery && matchFilter;
     });
-  }, [filter, periodFilter, salesCards, searchTerm]);
+  }, [filter, salesCards, searchTerm]);
 
   const filterOptions = useMemo<ChipOption[]>(
     () => [
@@ -307,6 +326,9 @@ export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) 
                       Prix: {Number.isFinite(line.priceAtSale) ? fmtCurrency(line.priceAtSale as number) : '-'}
                     </Text>
                     <Text style={styles.lineMeta}>Total: {lineTotal != null ? fmtCurrency(lineTotal) : '-'}</Text>
+                    {line.serialNumbers && line.serialNumbers.length > 0 ? (
+                      <Text style={styles.lineMeta}>IMEI: {line.serialNumbers.join(', ')}</Text>
+                    ) : null}
                   </View>
                 );
               })}

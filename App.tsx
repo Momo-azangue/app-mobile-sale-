@@ -18,6 +18,7 @@ import { LoadingState } from './src/components/common/LoadingState';
 import { DashboardScreen } from './src/screens/Dashboard';
 import { VentesScreen } from './src/screens/Ventes';
 import { StocksScreen } from './src/screens/Stocks';
+import { ProductDetailScreen } from './src/screens/stocks/ProductDetail';
 import { ClientsScreen } from './src/screens/Clients';
 import { ParametresScreen } from './src/screens/Parametres';
 import { NouvelleVenteScreen } from './src/screens/NouvelleVente';
@@ -42,6 +43,11 @@ function AppShell() {
   const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
   const [showNewSale, setShowNewSale] = useState(false);
   const [showMoreDrawer, setShowMoreDrawer] = useState(false);
+  // Overlay produit : quand non null, on remplace l'écran Stocks par la
+  // fiche produit. Volontairement persistant entre navigations d'onglets
+  // pour pas perdre la consultation en cours quand l'utilisateur va
+  // vérifier autre chose ; reset explicite via le bouton retour.
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [refreshSignal, setRefreshSignal] = useState(0);
   const appStateRef = useRef(AppState.currentState);
 
@@ -49,6 +55,17 @@ function AppShell() {
     setRefreshSignal((value) => value + 1);
     void refreshAppSettings();
   }, [refreshAppSettings]);
+
+  /**
+   * Wrapper de {@code setActiveTab} qui reset systématiquement la fiche
+   * produit ouverte. On veut que changer d'onglet remette toujours sur la
+   * liste (comportement prévisible) ; sinon revenir à Stocks ramènerait
+   * l'utilisateur à mi-chemin dans une fiche oubliée.
+   */
+  const handleTabChange = useCallback((tab: NavigationTab) => {
+    setSelectedProductId(null);
+    setActiveTab(tab);
+  }, []);
 
   const isAutoRefreshEnabled = Boolean(
     session && !showNewSale && AUTO_REFRESH_TABS.includes(activeTab),
@@ -116,7 +133,22 @@ function AppShell() {
       case 'ventes':
         return <VentesScreen refreshSignal={refreshSignal} onCreateNew={() => setShowNewSale(true)} />;
       case 'stocks':
-        return <StocksScreen refreshSignal={refreshSignal} onProductChanged={bumpRefresh} />;
+        if (selectedProductId) {
+          return (
+            <ProductDetailScreen
+              productId={selectedProductId}
+              refreshSignal={refreshSignal}
+              onBack={() => setSelectedProductId(null)}
+            />
+          );
+        }
+        return (
+          <StocksScreen
+            refreshSignal={refreshSignal}
+            onProductChanged={bumpRefresh}
+            onSelectProduct={(productId) => setSelectedProductId(productId)}
+          />
+        );
       case 'clients':
         return <ClientsScreen refreshSignal={refreshSignal} onClientChanged={bumpRefresh} />;
       case 'fournisseurs':
@@ -138,7 +170,7 @@ function AppShell() {
       default:
         return <DashboardScreen refreshSignal={refreshSignal} />;
     }
-  }, [activeTab, bumpRefresh, logout, refreshSignal, session, showNewSale]);
+  }, [activeTab, bumpRefresh, logout, refreshSignal, selectedProductId, session, showNewSale]);
 
   if (isBooting) {
     return (
@@ -157,7 +189,7 @@ function AppShell() {
 
       {isDesktopLayout ? (
         <View style={styles.desktopShell}>
-          <SideNavigation activeTab={activeTab} onTabChange={setActiveTab} onLogout={() => void logout()} />
+          <SideNavigation activeTab={activeTab} onTabChange={handleTabChange} onLogout={() => void logout()} />
           <View style={styles.desktopContent}>{content}</View>
         </View>
       ) : (
@@ -177,7 +209,7 @@ function AppShell() {
                 activeTab={activeTab}
                 onTabChange={(tab) => {
                   setShowMoreDrawer(false);
-                  setActiveTab(tab);
+                  handleTabChange(tab);
                 }}
               />
             </View>
@@ -189,7 +221,7 @@ function AppShell() {
               shopName={shopName}
               onClose={() => setShowMoreDrawer(false)}
               onSelectTab={(tab) => {
-                setActiveTab(tab);
+                handleTabChange(tab);
               }}
               onLogout={() => {
                 setShowMoreDrawer(false);

@@ -1,5 +1,5 @@
 import { ComponentProps, useCallback, useMemo, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import {
@@ -8,24 +8,50 @@ import {
   createStockMovement,
   deleteProduct,
   deleteProductVariant,
+  getProductByBarcode,
   listCategories,
-  listProductVariants,
+  listClients,
+  listProductUnits,
   listProducts,
+  listProductVariants,
+  listProviders,
   listStockMovements,
   updateProduct,
+  updateProductUnitStatus,
 } from '../api/services';
+import { BarcodeScanner } from '../components/common/BarcodeScanner';
 import { getErrorMessage } from '../api/errors';
 import { useFormatCurrency } from '../context/AppSettingsContext';
 import { formatDate } from '../utils/format';
 import type {
   CategoryResponseDTO,
+  ClientResponseDTO,
   MovementSource,
   MovementType,
   ProductResponseDTO,
+  ProductUnitResponseDTO,
+  ProductUnitStatus,
   ProductVariantResponseDTO,
+  ProviderResponseDTO,
   StockMovementResponseDTO,
   TrackingMode,
 } from '../types/api';
+
+const PRODUCT_UNIT_STATUS_LABELS: Record<ProductUnitStatus, string> = {
+  IN_STOCK: 'En stock',
+  SOLD: 'Vendu',
+  RETURNED: 'Retourné',
+  DAMAGED: 'Endommagé',
+  LOST: 'Perdu',
+};
+
+const PRODUCT_UNIT_STATUS_COLORS: Record<ProductUnitStatus, string> = {
+  IN_STOCK: '#16a34a',
+  SOLD: '#2563eb',
+  RETURNED: '#f59e0b',
+  DAMAGED: '#dc2626',
+  LOST: '#6b7280',
+};
 import { colors, radius, shadows } from '../theme/tokens';
 import { typography } from '../theme/typography';
 import { AppButton } from '../components/common/AppButton';
@@ -33,6 +59,7 @@ import { ChipGroup, type ChipOption } from '../components/common/ChipGroup';
 import { EmptyState } from '../components/common/EmptyState';
 import { ErrorState } from '../components/common/ErrorState';
 import { FormModal } from '../components/common/FormModal';
+import { ImeiInput } from '../components/common/ImeiInput';
 import { InputField } from '../components/common/InputField';
 import { LoadingState } from '../components/common/LoadingState';
 import { SearchableSelectField, type SearchableSelectOption } from '../components/common/SearchableSelectField';
@@ -45,6 +72,10 @@ import { usePullToRefresh } from '../hooks/usePullToRefresh';
 interface StocksScreenProps {
   refreshSignal: number;
   onProductChanged?: () => void;
+  /** Si fourni : tap sur une card produit (ou scan code-barres réussi)
+   *  ouvre l'écran ProductDetail. Sans cette prop, les cards restent
+   *  passives — utile pour les contextes où la consultation n'a pas de sens. */
+  onSelectProduct?: (productId: string) => void;
 }
 
 interface ComputedStock {
@@ -56,6 +87,8 @@ interface StockScreenData {
   products: ProductResponseDTO[];
   movements: StockMovementResponseDTO[];
   categories: CategoryResponseDTO[];
+  providers: ProviderResponseDTO[];
+  clients: ClientResponseDTO[];
 }
 
 type MovementVisual = {
@@ -127,10 +160,23 @@ function movementVisual(type: MovementType): MovementVisual {
   }
 }
 
-export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenProps) {
+function acceptsSerialUnitCreation(type: MovementType): boolean {
+  return type === 'ENTREE' || type === 'CONSIGNATION_ENTREE' || type === 'PRODUCTION';
+}
+
+function parseSerialNumbers(value: string): string[] {
+  return value
+    .split(/[\n,;]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct }: StocksScreenProps) {
   const fmtCurrency = useFormatCurrency();
   const [activeTab, setActiveTab] = useState<'produits' | 'mouvements'>('produits');
   const [productQuery, setProductQuery] = useState('');
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const [scannerLookupInProgress, setScannerLookupInProgress] = useState(false);
   const [movementQuery, setMovementQuery] = useState('');
   const [showProductFilters, setShowProductFilters] = useState(false);
   const [showMovementFilters, setShowMovementFilters] = useState(false);
@@ -148,6 +194,12 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
   const [productPrice, setProductPrice] = useState('');
   const [productCategoryId, setProductCategoryId] = useState('');
   const [productTrackingMode, setProductTrackingMode] = useState<TrackingMode>('NONE');
+  // Consignation : on cocheable à la création/édition pour signaler que ce
+  // produit est habituellement pris chez un fournisseur. providerId devient
+  // obligatoire dès lors. providerPrice est le prix d'achat de référence.
+  const [productConsignment, setProductConsignment] = useState(false);
+  const [productProviderId, setProductProviderId] = useState('');
+  const [productProviderPrice, setProductProviderPrice] = useState('');
 
   // Variantes (visibles uniquement en mode édition d'un produit existant)
   const [productVariants, setProductVariants] = useState<ProductVariantResponseDTO[]>([]);
@@ -158,23 +210,41 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
   const [newVariantPrice, setNewVariantPrice] = useState('');
   const [newVariantStock, setNewVariantStock] = useState('');
 
+  // Unités physiques (visibles uniquement en édition d'un produit SERIAL)
+  const [productUnits, setProductUnits] = useState<ProductUnitResponseDTO[]>([]);
+  const [loadingProductUnits, setLoadingProductUnits] = useState(false);
+  const [unitStatusFilter, setUnitStatusFilter] = useState<'all' | ProductUnitStatus>('all');
+
   const [showMovementModal, setShowMovementModal] = useState(false);
   const [movementProductId, setMovementProductId] = useState('');
   const [movementQuantity, setMovementQuantity] = useState('1');
   const [movementType, setMovementType] = useState<MovementType>('ENTREE');
   const [movementSource, setMovementSource] = useState<MovementSource | ''>('');
   const [movementReason, setMovementReason] = useState('');
+  /** Fournisseur (visible si ENTREE/CONSIGNATION_ENTREE ; obligatoire pour CONSIGNATION_ENTREE). */
+  const [movementProviderId, setMovementProviderId] = useState('');
+  const [movementUnitPurchasePrice, setMovementUnitPurchasePrice] = useState('');
+  const [movementSerialNumbers, setMovementSerialNumbers] = useState('');
+  /** Client (visible/obligatoire si source RETOUR_CLIENT). */
+  const [movementClientId, setMovementClientId] = useState('');
+  /** Référence libre (n° BL fournisseur, n° commande, n° retour). */
+  const [movementReference, setMovementReference] = useState('');
 
   const fetchStockData = useCallback(async (): Promise<StockScreenData> => {
-    const [fetchedProducts, fetchedMovements, fetchedCategories] = await Promise.all([
-      listProducts(),
-      listStockMovements(),
-      listCategories(),
-    ]);
+    const [fetchedProducts, fetchedMovements, fetchedCategories, fetchedProviders, fetchedClients] =
+      await Promise.all([
+        listProducts(),
+        listStockMovements(),
+        listCategories(),
+        listProviders().catch(() => [] as ProviderResponseDTO[]),
+        listClients().catch(() => [] as ClientResponseDTO[]),
+      ]);
     return {
       products: fetchedProducts,
       movements: fetchedMovements,
       categories: fetchedCategories,
+      providers: fetchedProviders,
+      clients: fetchedClients,
     };
   }, []);
 
@@ -195,6 +265,8 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
   const products = data?.products ?? [];
   const movements = data?.movements ?? [];
   const categories = data?.categories ?? [];
+  const providers = data?.providers ?? [];
+  const clients = data?.clients ?? [];
 
   const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const namedProductVariants = useMemo(
@@ -210,6 +282,15 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
         subtitle: category.description,
       })),
     [categories]
+  );
+  const providerOptions = useMemo<SearchableSelectOption[]>(
+    () =>
+      providers.map((provider) => ({
+        label: provider.name,
+        value: provider.id,
+        subtitle: provider.email ?? provider.phone,
+      })),
+    [providers]
   );
   const categoryFilterOptions = useMemo<SearchableSelectOption[]>(
     () => [{ label: 'Toutes les categories', value: 'all' }, ...categoryOptions],
@@ -287,7 +368,8 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
     const lower = movementQuery.toLowerCase();
     return movements.filter((movement) => {
       const productName = productById.get(movement.productId)?.name ?? movement.productId;
-      const blob = `${productName} ${movement.type} ${movement.source ?? ''} ${movement.reason ?? ''}`.toLowerCase();
+      const serialNumbers = movement.serialNumbers?.join(' ') ?? '';
+      const blob = `${productName} ${movement.type} ${movement.source ?? ''} ${movement.reason ?? ''} ${serialNumbers}`.toLowerCase();
       const matchQuery = blob.includes(lower);
       const matchType = movementTypeFilter === 'all' ? true : movement.type === movementTypeFilter;
       const matchProduct = movementProductFilter === 'all' ? true : movement.productId === movementProductFilter;
@@ -313,6 +395,18 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
     }
   }, []);
 
+  const loadProductUnits = useCallback(async (productId: string) => {
+    setLoadingProductUnits(true);
+    try {
+      const units = await listProductUnits({ productId });
+      setProductUnits(units);
+    } catch {
+      setProductUnits([]);
+    } finally {
+      setLoadingProductUnits(false);
+    }
+  }, []);
+
   const resetVariantForm = () => {
     setNewVariantName('');
     setNewVariantPrice('');
@@ -326,11 +420,45 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
     setProductPrice('');
     setProductCategoryId(categories[0]?.id ?? '');
     setProductTrackingMode('NONE');
+    setProductConsignment(false);
+    setProductProviderId('');
+    setProductProviderPrice('');
     setProductVariants([]);
     setVariantError(null);
     resetVariantForm();
     setShowProductModal(true);
   };
+
+  /**
+   * Lookup serveur après scan code-barres : ouvre la fiche produit si trouvé,
+   * sinon Alert. {@code scannerLookupInProgress} évite les double-clics
+   * pendant la requête réseau.
+   */
+  const handleBarcodeScanned = useCallback(
+    async (code: string) => {
+      if (scannerLookupInProgress) {
+        return;
+      }
+      if (!onSelectProduct) {
+        Alert.alert('Indisponible', 'La consultation produit n est pas accessible depuis cette vue.');
+        return;
+      }
+      setScannerLookupInProgress(true);
+      try {
+        const product = await getProductByBarcode(code);
+        onSelectProduct(product.id);
+      } catch (lookupError) {
+        const message = getErrorMessage(lookupError);
+        Alert.alert(
+          'Produit introuvable',
+          `Aucun produit avec le code "${code}".\n${message}`,
+        );
+      } finally {
+        setScannerLookupInProgress(false);
+      }
+    },
+    [onSelectProduct, scannerLookupInProgress],
+  );
 
   const openEditProductModal = (product: ProductResponseDTO) => {
     setEditingProductId(product.id);
@@ -339,11 +467,19 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
     setProductPrice(product.price != null ? String(product.price) : '');
     setProductCategoryId(product.categoryId ?? categories[0]?.id ?? '');
     setProductTrackingMode(product.trackingMode ?? 'NONE');
+    setProductConsignment(Boolean(product.consignment));
+    setProductProviderId(product.providerId ?? '');
+    setProductProviderPrice(product.providerPrice != null ? String(product.providerPrice) : '');
     setProductVariants([]);
+    setProductUnits([]);
+    setUnitStatusFilter('all');
     setVariantError(null);
     resetVariantForm();
     setShowProductModal(true);
     void loadProductVariants(product.id);
+    if (product.trackingMode === 'SERIAL') {
+      void loadProductUnits(product.id);
+    }
   };
 
   const closeProductModal = () => {
@@ -354,10 +490,51 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
     setProductPrice('');
     setProductCategoryId('');
     setProductTrackingMode('NONE');
+    setProductConsignment(false);
+    setProductProviderId('');
+    setProductProviderPrice('');
     setProductVariants([]);
+    setProductUnits([]);
+    setUnitStatusFilter('all');
     setSavingVariant(false);
     setVariantError(null);
     resetVariantForm();
+  };
+
+  const askChangeUnitStatus = (unit: ProductUnitResponseDTO) => {
+    if (!editingProductId) return;
+    // Le statut SOLD est interdit ici (réservé au flux vente).
+    const allTransitions: Array<{ label: string; status: ProductUnitStatus; destructive?: boolean }> = [
+      { label: 'Remettre en stock', status: 'IN_STOCK' },
+      { label: 'Retourné par client', status: 'RETURNED' },
+      { label: 'Endommagé', status: 'DAMAGED', destructive: true },
+      { label: 'Perdu / Volé', status: 'LOST', destructive: true },
+    ];
+    const available = allTransitions.filter((t) => t.status !== unit.status);
+
+    Alert.alert(
+      `IMEI ${unit.serialNumber}`,
+      `Statut actuel : ${PRODUCT_UNIT_STATUS_LABELS[unit.status]}`,
+      [
+        ...available.map((t) => ({
+          text: t.label,
+          style: t.destructive ? ('destructive' as const) : ('default' as const),
+          onPress: () => applyUnitStatusChange(unit, t.status),
+        })),
+        { text: 'Annuler', style: 'cancel' as const },
+      ],
+    );
+  };
+
+  const applyUnitStatusChange = async (unit: ProductUnitResponseDTO, newStatus: ProductUnitStatus) => {
+    if (!editingProductId) return;
+    try {
+      await updateProductUnitStatus(unit.id, { status: newStatus });
+      await loadProductUnits(editingProductId);
+      onProductChanged?.();
+    } catch (statusError) {
+      Alert.alert('Erreur', getErrorMessage(statusError));
+    }
   };
 
   const handleAddVariant = async () => {
@@ -438,6 +615,11 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
     setMovementType('ENTREE');
     setMovementSource('');
     setMovementReason('');
+    setMovementProviderId('');
+    setMovementUnitPurchasePrice('');
+    setMovementSerialNumbers('');
+    setMovementClientId('');
+    setMovementReference('');
   };
 
   const handleSaveProduct = async () => {
@@ -455,6 +637,26 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
       return;
     }
 
+    // Validation consignation : un produit consigné doit obligatoirement
+    // pointer un fournisseur — le backend le rejette aussi mais on évite
+    // un aller-retour et on donne un message localisé.
+    if (productConsignment && !productProviderId) {
+      Alert.alert(
+        'Validation',
+        'Un produit consigne doit etre lie a un fournisseur. Selectionnez un fournisseur ou decochez "consigne".',
+      );
+      return;
+    }
+    let parsedProviderPrice: number | undefined;
+    if (productProviderPrice.trim()) {
+      const value = Number(productProviderPrice.replace(',', '.').trim());
+      if (!Number.isFinite(value) || value < 0) {
+        Alert.alert('Validation', "Le prix d'achat fournisseur doit etre un nombre positif ou nul.");
+        return;
+      }
+      parsedProviderPrice = value;
+    }
+
     setSaving(true);
     try {
       const payload = {
@@ -463,6 +665,9 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
         price: parsedPrice,
         categoryId: productCategoryId,
         trackingMode: productTrackingMode,
+        consignment: productConsignment,
+        providerId: productConsignment ? productProviderId : undefined,
+        providerPrice: parsedProviderPrice,
       };
 
       if (editingProductId) {
@@ -508,6 +713,56 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
       Alert.alert('Validation', 'La quantite doit etre un entier positif.');
       return;
     }
+    if (Math.trunc(parsedQuantity) !== parsedQuantity) {
+      Alert.alert('Validation', 'La quantite doit etre un entier positif.');
+      return;
+    }
+    const isIncomingMovement = movementType === 'ENTREE' || movementType === 'CONSIGNATION_ENTREE';
+    const acceptsSerialNumbers = acceptsSerialUnitCreation(movementType);
+    const selectedMovementProduct = productById.get(movementProductId);
+    const isSerialProduct = selectedMovementProduct?.trackingMode === 'SERIAL';
+    const serialNumbers = parseSerialNumbers(movementSerialNumbers);
+    const normalizedPurchasePrice = movementUnitPurchasePrice.replace(',', '.').trim();
+    const parsedPurchasePrice = normalizedPurchasePrice ? Number(normalizedPurchasePrice) : undefined;
+    if (
+      isIncomingMovement
+      && parsedPurchasePrice !== undefined
+      && (!Number.isFinite(parsedPurchasePrice) || parsedPurchasePrice < 0)
+    ) {
+      Alert.alert('Validation', "Le prix d'achat unitaire doit etre un nombre positif ou vide.");
+      return;
+    }
+
+    // Règles métier (mirroir de StockMovementService côté backend) — validation côté UI
+    // pour feedback immédiat ; le backend reste la source de vérité.
+    if (movementType === 'CONSIGNATION_ENTREE' && !movementProviderId) {
+      Alert.alert('Validation', 'Un fournisseur est obligatoire pour une entrée en consignation.');
+      return;
+    }
+    if (movementSource === 'RETOUR_CLIENT' && !movementClientId) {
+      Alert.alert('Validation', 'Un client est obligatoire pour un retour client.');
+      return;
+    }
+    if (movementSource === 'AJUSTEMENT' && !movementReason.trim()) {
+      Alert.alert('Validation', 'Le motif est obligatoire pour un ajustement de stock.');
+      return;
+    }
+    if (isSerialProduct && !acceptsSerialNumbers) {
+      Alert.alert('Validation', 'Les sorties de produits SERIAL doivent etre faites depuis une vente.');
+      return;
+    }
+    if (isSerialProduct && acceptsSerialNumbers && serialNumbers.length !== Math.trunc(parsedQuantity)) {
+      Alert.alert('Validation', 'Le nombre d IMEI doit correspondre exactement a la quantite entree.');
+      return;
+    }
+    if (serialNumbers.length > 0 && new Set(serialNumbers).size !== serialNumbers.length) {
+      Alert.alert('Validation', 'Un meme IMEI ne peut pas etre saisi plusieurs fois.');
+      return;
+    }
+    if (!isSerialProduct && serialNumbers.length > 0) {
+      Alert.alert('Validation', 'Les IMEI sont reserves aux produits configures avec suivi SERIAL.');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -517,6 +772,11 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
         type: movementType,
         source: movementSource || undefined,
         reason: movementReason.trim() || undefined,
+        providerId: isIncomingMovement ? movementProviderId || undefined : undefined,
+        unitPurchasePrice: isIncomingMovement ? parsedPurchasePrice : undefined,
+        serialNumbers: isSerialProduct && acceptsSerialNumbers ? serialNumbers : undefined,
+        clientId: movementSource === 'RETOUR_CLIENT' ? movementClientId || undefined : undefined,
+        reference: movementReference.trim() || undefined,
         date: new Date().toISOString(),
       });
 
@@ -536,6 +796,10 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
   if (error) {
     return <ErrorState title='Erreur stock' message={error} onRetry={() => void loadStockData()} />;
   }
+
+  const selectedMovementProduct = productById.get(movementProductId);
+  const showMovementSerialNumbers =
+    selectedMovementProduct?.trackingMode === 'SERIAL' && acceptsSerialUnitCreation(movementType);
 
   return (
     <View style={styles.wrapper}>
@@ -579,6 +843,16 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
                 placeholder='Rechercher un produit...'
                 style={styles.searchField}
               />
+              {onSelectProduct ? (
+                <Pressable
+                  style={styles.scanIconButton}
+                  onPress={() => setScannerVisible(true)}
+                  accessibilityLabel='Scanner un code-barres pour ouvrir un produit'
+                  hitSlop={6}
+                >
+                  <Feather name='maximize' size={18} color={colors.neutral700} />
+                </Pressable>
+              ) : null}
               <Pressable
                 style={[styles.filterButton, showProductFilters && styles.filterButtonActive]}
                 onPress={() => setShowProductFilters((current) => !current)}
@@ -636,8 +910,12 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
               <View style={styles.list}>
                 {filteredProducts.map((product) => {
                   const stock = stockByProduct.get(product.id) ?? { available: 0, consigned: 0 };
-                  return (
-                    <View key={product.id} style={styles.card}>
+                  // Card cliquable si la consultation produit est branchée
+                  // (App.tsx fournit onSelectProduct). Les boutons edit/delete
+                  // restent imbriqués : leur Pressable absorbe le tap avant
+                  // que la card parente ne le voie.
+                  const cardContent = (
+                    <View style={styles.card}>
                       <View style={styles.productHeader}>
                         <View style={styles.productTitleWrap}>
                           <Text style={styles.productName}>{product.name}</Text>
@@ -646,10 +924,10 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
                           </Text>
                         </View>
                         <View style={styles.actionsWrap}>
-                          <Pressable onPress={() => openEditProductModal(product)}>
+                          <Pressable onPress={() => openEditProductModal(product)} hitSlop={6}>
                             <Feather name='edit-2' size={18} color={colors.neutral600} />
                           </Pressable>
-                          <Pressable onPress={() => handleDeleteProduct(product)}>
+                          <Pressable onPress={() => handleDeleteProduct(product)} hitSlop={6}>
                             <Feather name='trash-2' size={18} color={colors.danger600} />
                           </Pressable>
                         </View>
@@ -670,6 +948,13 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
                         </View>
                       </View>
                     </View>
+                  );
+                  return onSelectProduct ? (
+                    <Pressable key={product.id} onPress={() => onSelectProduct(product.id)}>
+                      {cardContent}
+                    </Pressable>
+                  ) : (
+                    <View key={product.id}>{cardContent}</View>
                   );
                 })}
               </View>
@@ -741,6 +1026,9 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
                 {filteredMovements.map((movement) => {
                   const visual = movementVisual(movement.type);
                   const productName = productById.get(movement.productId)?.name ?? movement.productId;
+                  const serialSummary = movement.serialNumbers?.length
+                    ? `IMEI: ${movement.serialNumbers.join(', ')}`
+                    : null;
 
                   return (
                     <View key={movement.id} style={styles.card}>
@@ -752,6 +1040,7 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
                         <View style={styles.movementText}>
                           <Text style={styles.productName}>{productName}</Text>
                           <Text style={styles.productMeta}>{movement.reason || movement.source || '-'}</Text>
+                          {serialSummary ? <Text style={styles.productMeta}>{serialSummary}</Text> : null}
                         </View>
 
                         <Text style={styles.movementQty}>
@@ -826,6 +1115,56 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
               ? 'Chaque unite sera identifiee par un IMEI / numero de serie (telephones, ordinateurs).'
               : 'Stock fongible en quantite (sacs de riz, chargeurs, vitres).'}
           </Text>
+        </View>
+
+        <View style={styles.formGroup}>
+          <View style={styles.consignmentToggleRow}>
+            <View style={styles.consignmentToggleLabelWrap}>
+              <Text style={styles.formLabel}>Produit consigne chez un fournisseur</Text>
+              <Text style={styles.helperText}>
+                Active si tu vends ce produit pour le compte d&apos;un fournisseur. Tu lui dois le prix d&apos;achat a chaque vente.
+              </Text>
+            </View>
+            <Switch
+              value={productConsignment}
+              onValueChange={(next) => {
+                setProductConsignment(next);
+                if (!next) {
+                  setProductProviderId('');
+                  setProductProviderPrice('');
+                }
+              }}
+              trackColor={{ false: colors.neutral300, true: colors.primary600 }}
+              thumbColor={colors.white}
+            />
+          </View>
+
+          {productConsignment ? (
+            <View style={styles.consignmentDetails}>
+              <SearchableSelectField
+                label='Fournisseur'
+                modalTitle='Selectionner un fournisseur'
+                placeholder='Choisir le fournisseur'
+                value={productProviderId}
+                options={providerOptions}
+                onChange={setProductProviderId}
+                disabled={providers.length === 0}
+              />
+              {providers.length === 0 ? (
+                <Text style={styles.helperText}>
+                  Aucun fournisseur enregistre. Cree-en un dans l&apos;onglet Fournisseurs.
+                </Text>
+              ) : null}
+
+              <InputField
+                label="Prix d'achat fournisseur"
+                value={productProviderPrice}
+                onChangeText={setProductProviderPrice}
+                placeholder='Ex: 1200'
+                keyboardType='numeric'
+              />
+            </View>
+          ) : null}
         </View>
 
         {editingProductId ? (
@@ -908,6 +1247,68 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
           </View>
         ) : null}
 
+        {editingProductId && productTrackingMode === 'SERIAL' ? (
+          <View style={styles.formGroup}>
+            <Text style={styles.formLabel}>Unités physiques (IMEI)</Text>
+            <Text style={styles.helperText}>
+              Les unités sont créées automatiquement lors des entrées en stock SERIAL et marquées vendues lors des ventes.
+              Tapez sur une unité pour changer manuellement son statut (retour client, perte, casse, ...).
+            </Text>
+
+            <View style={styles.unitsFilterRow}>
+              <ChipGroup
+                options={[
+                  { label: 'Tous', value: 'all' },
+                  { label: 'En stock', value: 'IN_STOCK' },
+                  { label: 'Vendus', value: 'SOLD' },
+                  { label: 'Retournés', value: 'RETURNED' },
+                  { label: 'Endommagés', value: 'DAMAGED' },
+                  { label: 'Perdus', value: 'LOST' },
+                ]}
+                value={unitStatusFilter}
+                onChange={(value) => setUnitStatusFilter(value as 'all' | ProductUnitStatus)}
+                layout='row-scroll'
+                tone='soft'
+              />
+            </View>
+
+            {loadingProductUnits ? (
+              <Text style={styles.helperText}>Chargement des unités...</Text>
+            ) : (() => {
+              const filteredUnits = unitStatusFilter === 'all'
+                ? productUnits
+                : productUnits.filter((u) => u.status === unitStatusFilter);
+              if (filteredUnits.length === 0) {
+                return <Text style={styles.helperText}>Aucune unité pour ce filtre.</Text>;
+              }
+              return (
+                <View style={styles.unitsList}>
+                  {filteredUnits.map((unit) => (
+                    <Pressable
+                      key={unit.id}
+                      onPress={() => askChangeUnitStatus(unit)}
+                      style={styles.unitRow}
+                    >
+                      <View style={styles.unitRowMain}>
+                        <Text style={styles.unitSerial}>{unit.serialNumber}</Text>
+                        <Text style={styles.unitMeta}>
+                          {unit.purchaseDate ? `Achat ${formatDate(unit.purchaseDate)}` : 'Date inconnue'}
+                          {unit.soldDate ? ` • Vendu ${formatDate(unit.soldDate)}` : ''}
+                        </Text>
+                      </View>
+                      <Text
+                        style={[styles.unitStatusBadge, { color: PRODUCT_UNIT_STATUS_COLORS[unit.status] }]}
+                      >
+                        {PRODUCT_UNIT_STATUS_LABELS[unit.status]}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              );
+            })()}
+          </View>
+        ) : null}
+
         <View style={styles.modalActions}>
           <View style={styles.actionItem}>
             <AppButton label='Retour' variant='outline' onPress={closeProductModal} disabled={saving || savingVariant} />
@@ -935,7 +1336,10 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
           placeholder='Choisir un produit'
           value={movementProductId}
           options={productOptions}
-          onChange={setMovementProductId}
+          onChange={(value) => {
+            setMovementProductId(value);
+            setMovementSerialNumbers('');
+          }}
           disabled={products.length === 0}
         />
 
@@ -944,7 +1348,13 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
           <ChipGroup
             options={MOVEMENT_TYPE_OPTIONS}
             value={movementType}
-            onChange={(value) => setMovementType(value as MovementType)}
+            onChange={(value) => {
+              const nextType = value as MovementType;
+              setMovementType(nextType);
+              if (!acceptsSerialUnitCreation(nextType)) {
+                setMovementSerialNumbers('');
+              }
+            }}
             layout='wrap'
             tone='soft'
           />
@@ -968,8 +1378,65 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
           placeholder='1'
           keyboardType='numeric'
         />
+
+        {showMovementSerialNumbers ? (
+          <View style={styles.formGroup}>
+            <ImeiInput
+              label='IMEI / numeros de serie'
+              value={movementSerialNumbers}
+              onChangeText={setMovementSerialNumbers}
+              placeholder='Un IMEI par ligne (ou scannez avec la caméra)'
+              helperText={`Renseignez exactement ${movementQuantity || '0'} IMEI pour ce produit SERIAL.`}
+            />
+          </View>
+        ) : null}
+
+        {/* Picker fournisseur — visible pour ENTREE / CONSIGNATION_ENTREE.
+            Obligatoire pour CONSIGNATION_ENTREE (le fournisseur reste propriétaire). */}
+        {(movementType === 'ENTREE' || movementType === 'CONSIGNATION_ENTREE') ? (
+          <SearchableSelectField
+            label={movementType === 'CONSIGNATION_ENTREE' ? 'Fournisseur (obligatoire)' : 'Fournisseur (optionnel)'}
+            modalTitle='Selectionner un fournisseur'
+            placeholder={providers.length === 0 ? 'Aucun fournisseur — créez-en un d\'abord' : 'Choisir un fournisseur'}
+            value={movementProviderId}
+            options={providers.map((p) => ({ label: p.name, value: p.id }))}
+            onChange={setMovementProviderId}
+            disabled={providers.length === 0}
+          />
+        ) : null}
+
+        {/* Picker client — visible/obligatoire si source RETOUR_CLIENT */}
+        {(movementType === 'ENTREE' || movementType === 'CONSIGNATION_ENTREE') ? (
+          <InputField
+            label="Prix d'achat unitaire (optionnel)"
+            value={movementUnitPurchasePrice}
+            onChangeText={setMovementUnitPurchasePrice}
+            placeholder='Ex: 125000'
+            keyboardType='decimal-pad'
+          />
+        ) : null}
+
+        {movementSource === 'RETOUR_CLIENT' ? (
+          <SearchableSelectField
+            label='Client (obligatoire pour un retour)'
+            modalTitle='Selectionner un client'
+            placeholder={clients.length === 0 ? 'Aucun client — créez-en un d\'abord' : 'Choisir un client'}
+            value={movementClientId}
+            options={clients.map((c) => ({ label: c.name, value: c.id }))}
+            onChange={setMovementClientId}
+            disabled={clients.length === 0}
+          />
+        ) : null}
+
         <InputField
-          label='Motif (optionnel)'
+          label='Référence (optionnel)'
+          value={movementReference}
+          onChangeText={setMovementReference}
+          placeholder='Ex: BL-2026-001, n° commande'
+        />
+
+        <InputField
+          label={movementSource === 'AJUSTEMENT' ? 'Motif (obligatoire)' : 'Motif (optionnel)'}
           value={movementReason}
           onChangeText={setMovementReason}
           placeholder='Ex: ajustement inventaire'
@@ -990,6 +1457,15 @@ export function StocksScreen({ refreshSignal, onProductChanged }: StocksScreenPr
           </View>
         </View>
       </FormModal>
+
+      <BarcodeScanner
+        visible={scannerVisible}
+        onClose={() => setScannerVisible(false)}
+        onScan={(code) => {
+          void handleBarcodeScanned(code);
+        }}
+        hint='Visez le code-barres du produit pour ouvrir sa fiche'
+      />
     </View>
   );
 }
@@ -1034,6 +1510,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+    ...shadows.sm,
+  },
+  scanIconButton: {
+    minHeight: 46,
+    width: 46,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.neutral300,
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
     ...shadows.sm,
   },
   filterButtonActive: {
@@ -1172,6 +1659,26 @@ const styles = StyleSheet.create({
     color: colors.neutral500,
     marginTop: 6,
   },
+  consignmentToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  consignmentToggleLabelWrap: {
+    flex: 1,
+    paddingRight: 4,
+  },
+  consignmentDetails: {
+    marginTop: 12,
+    gap: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.neutral200,
+  },
+  multilineInput: {
+    minHeight: 96,
+  },
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1207,6 +1714,42 @@ const styles = StyleSheet.create({
   variantMeta: {
     ...typography.caption,
     color: colors.neutral600,
+  },
+  unitsFilterRow: {
+    marginTop: 8,
+  },
+  unitsList: {
+    marginTop: 10,
+    gap: 8,
+  },
+  unitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.neutral100,
+    borderWidth: 1,
+    borderColor: colors.neutral200,
+  },
+  unitRowMain: {
+    flex: 1,
+    gap: 2,
+  },
+  unitSerial: {
+    ...typography.bodyMedium,
+    color: colors.neutral900,
+    fontFamily: 'monospace',
+  },
+  unitMeta: {
+    ...typography.caption,
+    color: colors.neutral600,
+  },
+  unitStatusBadge: {
+    ...typography.captionMedium,
+    textTransform: 'uppercase',
   },
   variantErrorBox: {
     paddingHorizontal: 10,

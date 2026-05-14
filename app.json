@@ -28,7 +28,18 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-font"
-    ]
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "L'accès à la caméra permet de scanner les codes-barres et IMEI des produits."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "0526e929-7020-4760-9a46-fa9b1e7572ac"
+      }
+    }
   }
 }
