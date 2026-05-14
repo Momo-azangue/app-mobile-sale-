@@ -19,6 +19,7 @@ interface BarcodeScannerProps {
    * de rouvrir s'il veut scanner plusieurs codes successifs.
    */
   onScan: (code: string) => void;
+  expect?: 'product' | 'imei';
   /** Texte d'aide affiché en bas (ex: "Visez le code-barres du produit"). */
   hint?: string;
 }
@@ -31,7 +32,7 @@ interface BarcodeScannerProps {
  * Réutilisable sur tout écran qui a besoin de scanner : recherche produit,
  * ajout de mouvement de stock, vente avec sérialisation IMEI…
  */
-export function BarcodeScanner({ visible, onClose, onScan, hint }: BarcodeScannerProps) {
+export function BarcodeScanner({ visible, onClose, onScan, expect = 'product', hint }: BarcodeScannerProps) {
   const [permission, requestPermission] = useCameraPermissions();
   const [permissionRequested, setPermissionRequested] = useState(false);
   // Garde-fou : sur Android, onBarcodeScanned peut être déclenché plusieurs
@@ -98,7 +99,7 @@ export function BarcodeScanner({ visible, onClose, onScan, hint }: BarcodeScanne
         <View style={styles.overlay} pointerEvents='box-none'>
           <View style={styles.hintBox}>
             <Text style={styles.hintText}>
-              {hint ?? "Visez le code-barres du produit"}
+              {hint ?? (expect === 'imei' ? "Visez l'IMEI de l'article" : "Visez le code-barres du produit")}
             </Text>
           </View>
 
