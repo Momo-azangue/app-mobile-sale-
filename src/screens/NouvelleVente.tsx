@@ -5,6 +5,8 @@ import { Feather } from '@expo/vector-icons';
 import {
   createSale,
   getByBarcode,
+  getProduct,
+  getProductUnitBySerialNumber,
   listAvailableProductUnits,
   listClients,
   listProducts,
@@ -132,7 +134,8 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   const [clientId, setClientId] = useState('');
   const [status, setStatus] = useState<InvoiceStatus>('IMPAYE');
   const [initialPaidAmount, setInitialPaidAmount] = useState('');
-  const [lines, setLines] = useState<SaleLineForm[]>([createEmptyLine()]);
+  const [lines, setLines] = useState<SaleLineForm[]>(() => [createEmptyLine()]);
+  const [expandedLineId, setExpandedLineId] = useState<string | null>(null);
   const [scannerTarget, setScannerTarget] = useState<ScannerTarget | null>(null);
 
   useEffect(() => {
@@ -163,6 +166,10 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   useEffect(() => {
     void loadReferences(true);
   }, [loadReferences, refreshSignal]);
+
+  useEffect(() => {
+    setExpandedLineId((current) => current ?? lines[0]?.id ?? null);
+  }, [lines]);
 
   const { refreshing, onRefresh } = usePullToRefresh(() => loadReferences(false));
 
@@ -216,9 +223,15 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   );
 
   const loadAvailableUnitsForLine = useCallback(
-    async (lineId: string, productId: string, variantId: string) => {
+    async (
+      lineId: string,
+      productId: string,
+      variantId: string,
+      trackingModeOverride?: ProductResponseDTO['trackingMode'],
+    ) => {
       const product = productById.get(productId);
-      if (!productId || !variantId || product?.trackingMode !== 'SERIAL') {
+      const trackingMode = product?.trackingMode ?? trackingModeOverride;
+      if (!productId || !variantId || trackingMode !== 'SERIAL') {
         setAvailableUnitsByLine((previous) => ({ ...previous, [lineId]: [] }));
         setLoadingUnitsByLine((previous) => ({ ...previous, [lineId]: false }));
         return;
@@ -252,7 +265,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
         preferConsigned: false,
       });
       if (nextVariantId) {
-        await loadAvailableUnitsForLine(lineId, product.id, nextVariantId);
+        await loadAvailableUnitsForLine(lineId, product.id, nextVariantId, product.trackingMode);
       }
     },
     [loadAvailableUnitsForLine],
@@ -298,11 +311,22 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
   };
 
   const addLine = () => {
-    setLines((previous) => [...previous, createEmptyLine()]);
+    const nextLine = createEmptyLine();
+    setLines((previous) => [...previous, nextLine]);
+    setExpandedLineId(nextLine.id);
   };
 
   const removeLine = (lineId: string) => {
-    setLines((previous) => (previous.length > 1 ? previous.filter((line) => line.id !== lineId) : previous));
+    setLines((previous) => {
+      if (previous.length <= 1) {
+        return previous;
+      }
+      const next = previous.filter((line) => line.id !== lineId);
+      if (expandedLineId === lineId) {
+        setExpandedLineId(next[0]?.id ?? null);
+      }
+      return next;
+    });
     setAvailableUnitsByLine((previous) => {
       const next = { ...previous };
       delete next[lineId];
@@ -504,6 +528,82 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
     }
   };
 
+  const handleImeiScan = async (lineId: string, index: number, code: string) => {
+    const serial = normalizeImei(code);
+    if (!serial) {
+      return;
+    }
+
+    const targetLine = lines.find((line) => line.id === lineId);
+    if (!targetLine) {
+      return;
+    }
+
+    const alreadyUsed = lines.some((line) =>
+      line.serialNumbers.some((candidate, candidateIndex) => {
+        if (line.id === lineId && candidateIndex === index) {
+          return false;
+        }
+        return normalizeImei(candidate).toUpperCase() === serial.toUpperCase();
+      }),
+    );
+
+    if (alreadyUsed) {
+      Alert.alert('Validation', 'Cet IMEI est deja saisi dans la vente.');
+      return;
+    }
+
+    try {
+      const unit = await getProductUnitBySerialNumber(serial);
+      if (unit.status !== 'IN_STOCK') {
+        Alert.alert('IMEI indisponible', `L'IMEI ${serial} n'est pas disponible a la vente.`);
+        return;
+      }
+      if (targetLine.productId && targetLine.productId !== unit.productId) {
+        Alert.alert('IMEI incoherent', "Cet IMEI n'appartient pas au produit choisi sur cette ligne.");
+        return;
+      }
+      if (targetLine.variantId && targetLine.variantId !== unit.variantId) {
+        Alert.alert('IMEI incoherent', "Cet IMEI n'appartient pas a la variante choisie sur cette ligne.");
+        return;
+      }
+
+      let product = productById.get(unit.productId);
+      if (!product) {
+        product = await getProduct(unit.productId);
+        setProducts((previous) =>
+          previous.some((item) => item.id === product?.id)
+            ? previous
+            : [...previous, product as ProductResponseDTO],
+        );
+      }
+
+      const variants = await loadVariantsForProduct(unit.productId);
+      const variant = variants.find((item) => item.id === unit.variantId);
+      if (!variant) {
+        Alert.alert('Variante introuvable', "La variante liee a cet IMEI n'est pas disponible sur l'appareil.");
+        return;
+      }
+
+      const nextSerials = [...targetLine.serialNumbers];
+      nextSerials[index] = serial;
+      const nextQuantity = Math.max(parsePositiveInteger(targetLine.quantity), index + 1, 1);
+
+      updateLine(lineId, {
+        productId: product.id,
+        variantId: variant.id,
+        quantity: String(nextQuantity),
+        priceAtSale: targetLine.priceAtSale || salePrice(product, variant),
+        serialNumbers: nextSerials,
+        preferConsigned: false,
+      });
+      await loadAvailableUnitsForLine(lineId, product.id, variant.id, product.trackingMode);
+      setExpandedLineId(lineId);
+    } catch (scanError) {
+      Alert.alert('IMEI introuvable', `Aucune unite en stock avec l'IMEI "${serial}".\n${getErrorMessage(scanError)}`);
+    }
+  };
+
   const handleScannerResult = (code: string) => {
     const target = scannerTarget;
     setScannerTarget(null);
@@ -514,7 +614,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
       void handleProductScan(target.lineId, code);
       return;
     }
-    setLineImei(target.lineId, target.index, code);
+    void handleImeiScan(target.lineId, target.index, code);
   };
 
   if (loading) {
@@ -630,11 +730,13 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
             availableUnits={availableUnitsByLine[line.id] ?? []}
             loadingUnits={loadingUnitsByLine[line.id] ?? false}
             canRemove={lines.length > 1}
+            expanded={expandedLineId === line.id}
             duplicateImeiSet={duplicateImeiSet}
             validateImei={validateImei}
+            onToggle={() => setExpandedLineId(line.id)}
             onRemove={() => removeLine(line.id)}
             onProductChange={(productId) => handleProductChange(line.id, productId)}
-            onProductScan={() => setScannerTarget({ type: 'product', lineId: line.id })}
+            onProductScan={() => setScannerTarget({ type: 'imei', lineId: line.id, index: 0 })}
             onVariantChange={(variantId) => handleVariantChange(line, variantId)}
             onQuantityChange={(quantity) => updateLine(line.id, { quantity })}
             onPriceChange={(priceAtSale) => updateLine(line.id, { priceAtSale })}
@@ -677,8 +779,10 @@ interface SaleLineCardProps {
   availableUnits: ProductUnitResponseDTO[];
   loadingUnits: boolean;
   canRemove: boolean;
+  expanded: boolean;
   duplicateImeiSet: Set<string>;
   validateImei: (line: SaleLineForm, index: number) => string | undefined;
+  onToggle: () => void;
   onRemove: () => void;
   onProductChange: (productId: string) => void;
   onProductScan: () => void;
@@ -699,8 +803,10 @@ function SaleLineCard({
   availableUnits,
   loadingUnits,
   canRemove,
+  expanded,
   duplicateImeiSet,
   validateImei,
+  onToggle,
   onRemove,
   onProductChange,
   onProductScan,
@@ -728,6 +834,54 @@ function SaleLineCard({
   const quantity = parsePositiveInteger(line.quantity);
   const serialIndexes = Array.from({ length: isSerial ? quantity : 0 }, (_, itemIndex) => itemIndex);
   const showPreferConsigned = !isSerial && Boolean(selectedVariant && selectedVariant.consignedQuantity > 0);
+  const parsedPrice = Number(line.priceAtSale.replace(',', '.').trim());
+  const lineTotal = quantity > 0 && Number.isFinite(parsedPrice) && parsedPrice > 0
+    ? quantity * parsedPrice
+    : null;
+  const enteredSerials = line.serialNumbers.map(normalizeImei).filter(Boolean);
+  const summaryTitle = product
+    ? [product.name, selectedVariant ? variantLabel(selectedVariant) : null].filter(Boolean).join(' - ')
+    : `Ligne ${index + 1}`;
+  const summaryMeta = product
+    ? `${quantity || 0} unite${quantity > 1 ? 's' : ''}${lineTotal != null ? ` - Total ${lineTotal.toFixed(2)}` : ''}`
+    : 'A completer';
+
+  if (!expanded) {
+    return (
+      <Pressable onPress={onToggle}>
+        <AppCard style={[styles.lineCard, styles.collapsedLineCard]}>
+          <View style={styles.collapsedHeader}>
+            <View style={styles.collapsedMain}>
+              <View style={styles.collapsedTitleRow}>
+                <Text style={styles.lineTitle} numberOfLines={1}>{summaryTitle}</Text>
+                {selectedVariant?.consignedQuantity ? <Badge label='Consigne dispo' /> : null}
+              </View>
+              <Text style={styles.collapsedMeta} numberOfLines={1}>{summaryMeta}</Text>
+              {enteredSerials.length > 0 ? (
+                <Text style={styles.collapsedMeta} numberOfLines={1}>
+                  IMEI {enteredSerials.join(', ')}
+                </Text>
+              ) : null}
+            </View>
+            <View style={styles.collapsedActions}>
+              {canRemove ? (
+                <Pressable
+                  onPress={(event) => {
+                    event.stopPropagation();
+                    onRemove();
+                  }}
+                  hitSlop={8}
+                >
+                  <Feather name='trash-2' size={17} color={colors.danger600} />
+                </Pressable>
+              ) : null}
+              <Feather name='chevron-down' size={18} color={colors.neutral500} />
+            </View>
+          </View>
+        </AppCard>
+      </Pressable>
+    );
+  }
 
   return (
     <AppCard style={styles.lineCard}>
@@ -736,9 +890,14 @@ function SaleLineCard({
           <Text style={styles.lineTitle}>Ligne {index + 1}</Text>
           {selectedVariant?.consignedQuantity ? <Badge label='Consigne dispo' /> : null}
         </View>
-        <Pressable onPress={onRemove} disabled={!canRemove}>
-          <Text style={[styles.removeText, !canRemove && styles.removeDisabled]}>Supprimer</Text>
-        </Pressable>
+        <View style={styles.expandedActions}>
+          <Pressable onPress={onToggle} hitSlop={8}>
+            <Feather name='chevron-up' size={18} color={colors.neutral500} />
+          </Pressable>
+          <Pressable onPress={onRemove} disabled={!canRemove}>
+            <Text style={[styles.removeText, !canRemove && styles.removeDisabled]}>Supprimer</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.productPickerRow}>
@@ -912,11 +1071,44 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     gap: 12,
   },
+  collapsedLineCard: {
+    gap: 0,
+  },
+  collapsedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  collapsedMain: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  collapsedTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  collapsedMeta: {
+    ...typography.caption,
+    color: colors.neutral500,
+  },
+  collapsedActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
   lineHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 10,
+  },
+  expandedActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   lineTitleWrap: {
     flexDirection: 'row',

@@ -6,7 +6,6 @@ import {
   createProduct,
   createStockMovement,
   deleteProduct,
-  getByBarcode,
   listCategories,
   listClients,
   listProducts,
@@ -16,7 +15,6 @@ import {
   updateProduct,
 } from '../api/services';
 import { getErrorMessage } from '../api/errors';
-import { BarcodeScanner } from '../components/common/BarcodeScanner';
 import { AppButton } from '../components/common/AppButton';
 import { ChipGroup, type ChipOption } from '../components/common/ChipGroup';
 import { EmptyState } from '../components/common/EmptyState';
@@ -172,9 +170,6 @@ export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct 
   const [productStockFilter, setProductStockFilter] = useState<'all' | 'available' | 'low' | 'zero'>('all');
   const [movementProductFilter, setMovementProductFilter] = useState('all');
   const [movementTypeFilter, setMovementTypeFilter] = useState<'all' | MovementType>('all');
-
-  const [scannerVisible, setScannerVisible] = useState(false);
-  const [scannerLookupInProgress, setScannerLookupInProgress] = useState(false);
 
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductResponseDTO | null>(null);
@@ -423,28 +418,6 @@ export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct 
     ]);
   };
 
-  const handleBarcodeScanned = useCallback(
-    async (code: string) => {
-      if (scannerLookupInProgress) {
-        return;
-      }
-      if (!onSelectProduct) {
-        Alert.alert('Indisponible', 'La fiche produit n est pas accessible depuis cette vue.');
-        return;
-      }
-      setScannerLookupInProgress(true);
-      try {
-        const lookup = await getByBarcode(code);
-        onSelectProduct(lookup.product.id, lookup.variant?.id ?? undefined);
-      } catch (lookupError) {
-        Alert.alert('Produit introuvable', `Aucun produit avec le code "${code}".\n${getErrorMessage(lookupError)}`);
-      } finally {
-        setScannerLookupInProgress(false);
-      }
-    },
-    [onSelectProduct, scannerLookupInProgress],
-  );
-
   const closeMovementModal = () => {
     setShowMovementModal(false);
     setMovementProductId('');
@@ -594,15 +567,6 @@ export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct 
                 placeholder='Rechercher un modele ou une variante...'
                 style={styles.searchField}
               />
-              {onSelectProduct ? (
-                <Pressable
-                  style={styles.iconButton}
-                  onPress={() => setScannerVisible(true)}
-                  accessibilityLabel='Scanner un code-barres'
-                >
-                  <Feather name='camera' size={18} color={colors.neutral700} />
-                </Pressable>
-              ) : null}
               <Pressable
                 style={[styles.filterButton, showProductFilters && styles.filterButtonActive]}
                 onPress={() => setShowProductFilters((current) => !current)}
@@ -903,14 +867,6 @@ export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct 
         </View>
       </FormModal>
 
-      <BarcodeScanner
-        visible={scannerVisible}
-        onClose={() => setScannerVisible(false)}
-        onScan={(code) => {
-          void handleBarcodeScanned(code);
-        }}
-        hint='Visez le code-barres du produit ou de la variante'
-      />
     </View>
   );
 }
@@ -1008,7 +964,7 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   topAction: {
-    alignItems: 'flex-start',
+    alignItems: 'center',
   },
   searchRow: {
     flexDirection: 'row',
@@ -1017,17 +973,6 @@ const styles = StyleSheet.create({
   },
   searchField: {
     flex: 1,
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.neutral200,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...shadows.sm,
   },
   filterButton: {
     minHeight: 44,
