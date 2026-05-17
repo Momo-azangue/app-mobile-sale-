@@ -62,7 +62,7 @@ export function RegisterFormSection({
       />
 
       <InputField
-        label='Mot de passe (min 8)'
+        label='Mot de passe fort'
         value={registerPassword}
         onChangeText={onRegisterPasswordChange}
         secureTextEntry

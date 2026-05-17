@@ -9,12 +9,14 @@ interface ErrorStateProps {
   title?: string;
   message: string;
   onRetry?: () => void;
+  actionLabel?: string;
 }
 
 export function ErrorState({
   title = 'Une erreur est survenue',
   message,
   onRetry,
+  actionLabel = 'Reessayer',
 }: ErrorStateProps) {
   return (
     <View style={styles.container}>
@@ -25,7 +27,7 @@ export function ErrorState({
       <Text style={styles.message}>{message}</Text>
       {onRetry ? (
         <View style={styles.actionWrap}>
-          <AppButton label='Reessayer' variant='ghost' onPress={onRetry} />
+          <AppButton label={actionLabel} variant='ghost' onPress={onRetry} />
         </View>
       ) : null}
     </View>

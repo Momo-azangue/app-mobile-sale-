@@ -16,7 +16,7 @@ export function MobileTopBar({ activeTab, onOpenDrawer }: MobileTopBarProps) {
   const activeLabel = getTabLabel(activeTab);
 
   return (
-    <View style={[styles.container, { paddingTop: Math.max(8, insets.top + 4) }]}>
+    <View style={[styles.container, { paddingTop: Math.max(5, insets.top + 1) }]}>
       <Pressable style={styles.menuButton} onPress={onOpenDrawer}>
         <Feather name='menu' size={20} color={colors.neutral800} />
       </Pressable>

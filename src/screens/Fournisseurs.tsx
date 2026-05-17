@@ -2,9 +2,10 @@ import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
-import { createProvider, deleteProvider, listProviders, updateProvider } from '../api/services';
+import { createProvider, deleteProvider, getSupplierDebts, listProviders, updateProvider } from '../api/services';
 import { getErrorMessage } from '../api/errors';
-import type { ProviderResponseDTO } from '../types/api';
+import type { ProviderResponseDTO, SupplierDebtResponseDTO } from '../types/api';
+import { useFormatCurrency } from '../context/AppSettingsContext';
 import { colors } from '../theme/tokens';
 import { typography } from '../theme/typography';
 import { AppButton } from '../components/common/AppButton';
@@ -17,6 +18,7 @@ import { InputField } from '../components/common/InputField';
 import { LoadingState } from '../components/common/LoadingState';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
+import { SegmentedControl, type SegmentedOption } from '../components/common/SegmentedControl';
 import { useCachedResource } from '../hooks/useCachedResource';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
@@ -24,9 +26,24 @@ interface FournisseursScreenProps {
   refreshSignal: number;
 }
 
+type FournisseursTab = 'dettes' | 'fournisseurs';
+
+interface FournisseursResource {
+  providers: ProviderResponseDTO[];
+  supplierDebts: SupplierDebtResponseDTO[];
+}
+
+const TAB_OPTIONS: SegmentedOption[] = [
+  { label: 'Dettes', value: 'dettes' },
+  { label: 'Fournisseurs', value: 'fournisseurs' },
+];
+
 export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
+  const formatCurrency = useFormatCurrency();
   const [saving, setSaving] = useState(false);
 
+  const [activeTab, setActiveTab] = useState<FournisseursTab>('dettes');
+  const [expandedDebtIds, setExpandedDebtIds] = useState<string[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -40,24 +57,29 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
   const [editPhone, setEditPhone] = useState('');
   const [editAddress, setEditAddress] = useState('');
 
-  const fetchProviders = useCallback(async (): Promise<ProviderResponseDTO[]> => {
-    return listProviders();
+  const fetchFournisseursResource = useCallback(async (): Promise<FournisseursResource> => {
+    const [providers, supplierDebts] = await Promise.all([
+      listProviders(),
+      getSupplierDebts(),
+    ]);
+    return { providers, supplierDebts };
   }, []);
 
   const { data, loading, error, reload } = useCachedResource({
     key: 'screen.fournisseurs',
-    fetcher: fetchProviders,
+    fetcher: fetchFournisseursResource,
     refreshSignal,
   });
 
-  const loadProviders = useCallback(
+  const loadFournisseurs = useCallback(
     async (showLoader: boolean = true) => {
       await reload(showLoader ? 'blocking' : 'silent');
     },
     [reload]
   );
-  const { refreshing, onRefresh } = usePullToRefresh(() => loadProviders(false));
-  const providers = data ?? [];
+  const { refreshing, onRefresh } = usePullToRefresh(() => loadFournisseurs(false));
+  const providers = data?.providers ?? [];
+  const supplierDebts = data?.supplierDebts ?? [];
 
   const filteredProviders = useMemo(() => {
     const lower = searchTerm.toLowerCase();
@@ -66,6 +88,14 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
       return blob.includes(lower);
     });
   }, [providers, searchTerm]);
+
+  const toggleDebtExpansion = (providerId: string) => {
+    setExpandedDebtIds((current) =>
+      current.includes(providerId)
+        ? current.filter((id) => id !== providerId)
+        : [...current, providerId],
+    );
+  };
 
   const resetForm = () => {
     setName('');
@@ -104,7 +134,7 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
       });
 
       closeCreateModal();
-      await loadProviders(false);
+      await loadFournisseurs(false);
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {
@@ -121,7 +151,7 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
         onPress: async () => {
           try {
             await deleteProvider(provider.id);
-            await loadProviders(false);
+            await loadFournisseurs(false);
           } catch (deleteError) {
             Alert.alert('Erreur', getErrorMessage(deleteError));
           }
@@ -158,7 +188,7 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
       });
 
       closeEditModal();
-      await loadProviders(false);
+      await loadFournisseurs(false);
     } catch (updateError) {
       Alert.alert('Erreur', getErrorMessage(updateError));
     } finally {
@@ -171,7 +201,7 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
   }
 
   if (error) {
-    return <ErrorState title='Erreur fournisseurs' message={error} onRetry={() => void loadProviders()} />;
+    return <ErrorState title='Erreur fournisseurs' message={error} onRetry={() => void loadFournisseurs()} />;
   }
 
   return (
@@ -185,42 +215,106 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
       >
         <ScreenHeader title='Fournisseurs' subtitle='Suivi des fournisseurs et coordonnees' />
 
-        <SearchField
-          value={searchTerm}
-          onChangeText={setSearchTerm}
-          placeholder='Rechercher un fournisseur...'
+        <SegmentedControl
+          options={TAB_OPTIONS}
+          value={activeTab}
+          onChange={(value) => setActiveTab(value as FournisseursTab)}
         />
 
-        {filteredProviders.length === 0 ? (
-          <EmptyState
-            icon='truck'
-            title='Aucun fournisseur'
-            description='Ajoutez un fournisseur pour preparer vos approvisionnements.'
-            actionLabel='Ajouter'
-            onAction={() => setShowCreateForm(true)}
-          />
-        ) : (
-          <View style={styles.list}>
-            {filteredProviders.map((provider) => (
-              <AppCard key={provider.id} style={styles.providerCard}>
-                <View style={styles.providerHeader}>
-                  <Text style={styles.providerName}>{provider.name}</Text>
-                  <View style={styles.actionsWrap}>
-                    <Pressable onPress={() => openEditModal(provider)}>
-                      <Feather name='edit-2' size={18} color={colors.neutral600} />
+        {activeTab === 'dettes' ? (
+          supplierDebts.length === 0 ? (
+            <EmptyState
+              icon='check-circle'
+              title='Aucune dette fournisseur en cours'
+              description='Les stocks consignes restants apparaitront ici avec leur montant fournisseur.'
+            />
+          ) : (
+            <View style={styles.list}>
+              {supplierDebts.map((debt) => {
+                const expanded = expandedDebtIds.includes(debt.providerId);
+                return (
+                  <AppCard key={debt.providerId} style={styles.providerCard}>
+                    <Pressable
+                      style={styles.debtHeader}
+                      onPress={() => toggleDebtExpansion(debt.providerId)}
+                    >
+                      <View style={styles.debtMain}>
+                        <Text style={styles.providerName}>{debt.providerName || debt.providerId}</Text>
+                        <Text style={styles.providerMeta}>
+                          {debt.totalConsignedUnits} unite{debt.totalConsignedUnits > 1 ? 's' : ''} consignee{debt.totalConsignedUnits > 1 ? 's' : ''}
+                        </Text>
+                      </View>
+                      <View style={styles.debtAmountWrap}>
+                        <Text style={styles.debtAmount}>{formatCurrency(debt.totalDebt)}</Text>
+                        <Feather
+                          name={expanded ? 'chevron-up' : 'chevron-down'}
+                          size={18}
+                          color={colors.neutral500}
+                        />
+                      </View>
                     </Pressable>
-                    <Pressable onPress={() => handleDeleteProvider(provider)}>
-                      <Feather name='trash-2' size={18} color={colors.danger600} />
-                    </Pressable>
-                  </View>
-                </View>
 
-                <Text style={styles.providerMeta}>{provider.email || '-'}</Text>
-                <Text style={styles.providerMeta}>{provider.phone || '-'}</Text>
-                <Text style={styles.providerMeta}>{provider.address || '-'}</Text>
-              </AppCard>
-            ))}
-          </View>
+                    {expanded ? (
+                      <View style={styles.debtLines}>
+                        {debt.lines.map((line) => (
+                          <View key={`${line.productId}-${line.variantId}`} style={styles.debtLine}>
+                            <View style={styles.debtLineMain}>
+                              <Text style={styles.debtLineTitle}>{line.productName}</Text>
+                              <Text style={styles.providerMeta}>{line.variantLabel}</Text>
+                              <Text style={styles.providerMeta}>
+                                {line.consignedQuantity} x {formatCurrency(line.providerPrice)}
+                              </Text>
+                            </View>
+                            <Text style={styles.debtLineAmount}>{formatCurrency(line.lineDebt)}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    ) : null}
+                  </AppCard>
+                );
+              })}
+            </View>
+          )
+        ) : (
+          <>
+            <SearchField
+              value={searchTerm}
+              onChangeText={setSearchTerm}
+              placeholder='Rechercher un fournisseur...'
+            />
+
+            {filteredProviders.length === 0 ? (
+              <EmptyState
+                icon='truck'
+                title='Aucun fournisseur'
+                description='Ajoutez un fournisseur pour preparer vos approvisionnements.'
+                actionLabel='Ajouter'
+                onAction={() => setShowCreateForm(true)}
+              />
+            ) : (
+              <View style={styles.list}>
+                {filteredProviders.map((provider) => (
+                  <AppCard key={provider.id} style={styles.providerCard}>
+                    <View style={styles.providerHeader}>
+                      <Text style={styles.providerName}>{provider.name}</Text>
+                      <View style={styles.actionsWrap}>
+                        <Pressable onPress={() => openEditModal(provider)}>
+                          <Feather name='edit-2' size={18} color={colors.neutral600} />
+                        </Pressable>
+                        <Pressable onPress={() => handleDeleteProvider(provider)}>
+                          <Feather name='trash-2' size={18} color={colors.danger600} />
+                        </Pressable>
+                      </View>
+                    </View>
+
+                    <Text style={styles.providerMeta}>{provider.email || '-'}</Text>
+                    <Text style={styles.providerMeta}>{provider.phone || '-'}</Text>
+                    <Text style={styles.providerMeta}>{provider.address || '-'}</Text>
+                  </AppCard>
+                ))}
+              </View>
+            )}
+          </>
         )}
       </ScrollView>
 
@@ -377,6 +471,49 @@ const styles = StyleSheet.create({
   providerMeta: {
     ...typography.label,
     color: colors.neutral500,
+  },
+  debtHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  debtMain: {
+    flex: 1,
+    gap: 2,
+  },
+  debtAmountWrap: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  debtAmount: {
+    ...typography.bodyMedium,
+    color: colors.danger600,
+  },
+  debtLines: {
+    marginTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.neutral200,
+  },
+  debtLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.neutral100,
+  },
+  debtLineMain: {
+    flex: 1,
+    gap: 2,
+  },
+  debtLineTitle: {
+    ...typography.label,
+    color: colors.neutral900,
+  },
+  debtLineAmount: {
+    ...typography.label,
+    color: colors.neutral900,
   },
   actionRow: {
     flexDirection: 'row',

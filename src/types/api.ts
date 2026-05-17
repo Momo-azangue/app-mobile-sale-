@@ -93,13 +93,14 @@ export interface RegisterRequestDTO {
   tenant: TenantRequestDTO;
 }
 
+export type UserRole = 'ADMIN' | 'EMPLOYE';
 export type UserStatus = 'ACTIVE' | 'SUSPENDED' | 'BLOCKED' | 'REVOKED';
 
 export interface UserResponseDTO {
   id?: string;
   name?: string;
   email: string;
-  role: string;
+  role: UserRole | string;
   status?: UserStatus;
   statusChangedAt?: string;
   statusReason?: string;
@@ -495,6 +496,24 @@ export interface InvoicesSummaryResponseDTO {
   partiel: number;
   impaye: number;
   totalDue: number;
+}
+
+export interface SupplierDebtLineDTO {
+  productId: string;
+  productName: string;
+  variantId: string;
+  variantLabel: string;
+  consignedQuantity: number;
+  providerPrice: number;
+  lineDebt: number;
+}
+
+export interface SupplierDebtResponseDTO {
+  providerId: string;
+  providerName: string;
+  totalConsignedUnits: number;
+  totalDebt: number;
+  lines: SupplierDebtLineDTO[];
 }
 
 // ── User self-service ─────────────────────────────────────────────────────────

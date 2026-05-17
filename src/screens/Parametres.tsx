@@ -1,19 +1,26 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 
 import {
+  changeMyPassword,
   createCommerceSettings,
+  deleteCommerceLogo,
   getMyTenant,
   listCommerceSettings,
   listMyTenantUsers,
   requestEmailVerification,
+  updateCommerceSettings,
   updateMyTenant,
+  updateUserRole,
   updateUserStatus,
+  uploadCommerceLogo,
 } from '../api/services';
 import { getErrorMessage } from '../api/errors';
 import { useAuth } from '../context/AuthContext';
 import { useAppSettings } from '../context/AppSettingsContext';
+import { API_BASE_URL } from '../config/env';
 import { colors } from '../theme/tokens';
 import { typography } from '../theme/typography';
 import { LoadingState } from '../components/common/LoadingState';
@@ -22,8 +29,10 @@ import { ScreenHeader } from '../components/common/ScreenHeader';
 import { AppButton } from '../components/common/AppButton';
 import { AppCard } from '../components/common/AppCard';
 import { InputField } from '../components/common/InputField';
+import { FormModal } from '../components/common/FormModal';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
-import type { TenantResponseDTO, UserResponseDTO, UserStatus } from '../types/api';
+import { getPasswordValidationMessage } from '../utils/password';
+import type { TenantResponseDTO, UserResponseDTO, UserRole, UserStatus } from '../types/api';
 
 const USER_STATUS_LABELS: Record<UserStatus, string> = {
   ACTIVE: 'Actif',
@@ -38,6 +47,32 @@ const USER_STATUS_COLORS: Record<UserStatus, string> = {
   BLOCKED: '#dc2626',    // rouge
   REVOKED: '#6b7280',    // gris
 };
+
+const USER_ROLE_LABELS: Record<UserRole, string> = {
+  ADMIN: 'Admin',
+  EMPLOYE: 'Employe',
+};
+
+function resolveLogoUri(url?: string): string | undefined {
+  if (!url) {
+    return undefined;
+  }
+  if (/^https?:\/\//i.test(url)) {
+    return url;
+  }
+  return `${API_BASE_URL.replace(/\/$/, '')}/${url.replace(/^\//, '')}`;
+}
+
+function guessMimeType(fileName: string): string {
+  const normalized = fileName.toLowerCase();
+  if (normalized.endsWith('.png')) {
+    return 'image/png';
+  }
+  if (normalized.endsWith('.webp')) {
+    return 'image/webp';
+  }
+  return 'image/jpeg';
+}
 
 interface ParametresScreenProps {
   refreshSignal: number;
@@ -56,12 +91,21 @@ export function ParametresScreen({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sendingVerification, setSendingVerification] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [deletingLogo, setDeletingLogo] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [storeName, setStoreName] = useState('');
   const [currency, setCurrency] = useState('XAF');
+  const [commerceSettingsId, setCommerceSettingsId] = useState<string | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | undefined>();
   const [tenant, setTenant] = useState<TenantResponseDTO | null>(null);
   const [tenantUsers, setTenantUsers] = useState<UserResponseDTO[]>([]);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
 
   const loadSettings = useCallback(async (showLoader: boolean = true) => {
     if (showLoader) {
@@ -76,16 +120,20 @@ export function ParametresScreen({
         listMyTenantUsers().catch(() => [] as UserResponseDTO[]),
       ]);
 
+      const latestSettings = settings.length > 0 ? settings[settings.length - 1] : null;
+      setCommerceSettingsId(latestSettings?.id ?? null);
+      setLogoUrl(latestSettings?.logoUrl);
+
       // Source d'autorité du nom : Tenant.name (saisi à l'inscription).
       // CommerceSettings.nom devient un fallback legacy.
       if (fetchedTenant?.name?.trim()) {
         setStoreName(fetchedTenant.name);
-      } else if (settings.length > 0 && settings[settings.length - 1]?.nom?.trim()) {
-        setStoreName(settings[settings.length - 1].nom);
+      } else if (latestSettings?.nom?.trim()) {
+        setStoreName(latestSettings.nom);
       }
       // Devise reste portée par CommerceSettings (entité dédiée aux préférences UI)
-      if (settings.length > 0 && settings[settings.length - 1]?.devise?.trim()) {
-        setCurrency(settings[settings.length - 1].devise);
+      if (latestSettings?.devise?.trim()) {
+        setCurrency(latestSettings.devise);
       }
       setTenant(fetchedTenant);
       setTenantUsers(fetchedUsers);
@@ -128,11 +176,16 @@ export function ParametresScreen({
       }
 
       // 2. CommerceSettings reste utilisé pour la devise (et legacy nom pour rétro-compat)
-      await createCommerceSettings({
+      const settingsPayload = {
         nom: trimmedName,
         devise: normalizedCurrency,
         facturePDFActive: true,
-      });
+      };
+      const savedSettings = commerceSettingsId
+        ? await updateCommerceSettings(commerceSettingsId, settingsPayload)
+        : await createCommerceSettings(settingsPayload);
+      setCommerceSettingsId(savedSettings.id);
+      setLogoUrl(savedSettings.logoUrl);
 
       // 3. Propage la nouvelle devise/nom à toute l'app (TopBar, Dashboard, etc.)
       await refreshAppSettings();
@@ -176,15 +229,26 @@ export function ParametresScreen({
       { label: 'Révoquer (accès retiré)', status: 'REVOKED', destructive: true },
     ];
     const available = allTransitions.filter((t) => t.status !== currentStatus);
+    const currentRole: UserRole = user.role === 'ADMIN' ? 'ADMIN' : 'EMPLOYE';
+    const roleTransitions = [
+      { label: 'Passer admin', role: 'ADMIN' },
+      { label: 'Passer employe', role: 'EMPLOYE' },
+    ] satisfies Array<{ label: string; role: UserRole }>;
+    const availableRoleTransitions = roleTransitions.filter((t) => t.role !== currentRole);
 
     Alert.alert(
       user.name ?? user.email,
-      `Statut actuel : ${USER_STATUS_LABELS[currentStatus]}`,
+      `Statut actuel : ${USER_STATUS_LABELS[currentStatus]}\nRole actuel : ${USER_ROLE_LABELS[currentRole]}`,
       [
         ...available.map((t) => ({
           text: t.label,
           style: t.destructive ? ('destructive' as const) : ('default' as const),
           onPress: () => confirmStatusChange(user, t.status),
+        })),
+        ...availableRoleTransitions.map((t) => ({
+          text: t.label,
+          style: 'default' as const,
+          onPress: () => confirmRoleChange(user, t.role),
         })),
         { text: 'Annuler', style: 'cancel' as const },
       ],
@@ -221,6 +285,151 @@ export function ParametresScreen({
     }
   };
 
+  const confirmRoleChange = (user: UserResponseDTO, newRole: UserRole) => {
+    Alert.alert(
+      'Changer le role',
+      `Passer ${user.name ?? user.email} en role ${newRole} ?`,
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Confirmer',
+          onPress: () => {
+            void applyRoleChange(user, newRole);
+          },
+        },
+      ],
+    );
+  };
+
+  const applyRoleChange = async (user: UserResponseDTO, newRole: UserRole) => {
+    if (!user.id) {
+      return;
+    }
+    try {
+      await updateUserRole(user.id, newRole);
+      Alert.alert('Succes', `${user.name ?? user.email} est maintenant ${newRole}.`);
+      await loadSettings(false);
+    } catch (roleError) {
+      Alert.alert('Erreur', getErrorMessage(roleError));
+    }
+  };
+
+  const resetPasswordModal = () => {
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowPasswordModal(false);
+  };
+
+  const handleChangePassword = async () => {
+    if (!currentPassword.trim()) {
+      Alert.alert('Validation', 'Le mot de passe actuel est obligatoire.');
+      return;
+    }
+    const passwordValidationMessage = getPasswordValidationMessage(newPassword);
+    if (passwordValidationMessage) {
+      Alert.alert('Validation', passwordValidationMessage);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Validation', 'Les deux nouveaux mots de passe ne correspondent pas.');
+      return;
+    }
+
+    setChangingPassword(true);
+    try {
+      await changeMyPassword({ currentPassword, newPassword });
+      resetPasswordModal();
+      Alert.alert('Succes', 'Mot de passe modifie.');
+    } catch (passwordError) {
+      Alert.alert('Erreur', getErrorMessage(passwordError));
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
+  const ensureCommerceSettings = async (): Promise<string | null> => {
+    if (commerceSettingsId) {
+      return commerceSettingsId;
+    }
+
+    const createdSettings = await createCommerceSettings({
+      nom: storeName.trim() || tenant?.name?.trim() || 'Ma boutique',
+      devise: currency.trim().toUpperCase() || 'XAF',
+      facturePDFActive: true,
+    });
+    setCommerceSettingsId(createdSettings.id);
+    setLogoUrl(createdSettings.logoUrl);
+    return createdSettings.id;
+  };
+
+  const handlePickLogo = async () => {
+    setUploadingLogo(true);
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert('Permission requise', 'Autorisez l acces aux photos pour choisir le logo.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.85,
+      });
+      if (result.canceled || result.assets.length === 0) {
+        return;
+      }
+
+      const settingsId = await ensureCommerceSettings();
+      if (!settingsId) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      const fileName = asset.fileName ?? asset.uri.split('/').pop() ?? 'logo.jpg';
+      const updatedSettings = await uploadCommerceLogo(settingsId, {
+        uri: asset.uri,
+        name: fileName,
+        type: asset.mimeType ?? guessMimeType(fileName),
+      });
+      setLogoUrl(updatedSettings.logoUrl);
+      await refreshAppSettings();
+      Alert.alert('Succes', 'Logo mis a jour.');
+    } catch (logoError) {
+      Alert.alert('Erreur logo', getErrorMessage(logoError));
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const handleDeleteLogo = () => {
+    if (!commerceSettingsId || !logoUrl) {
+      return;
+    }
+
+    Alert.alert('Supprimer le logo', 'Retirer le logo de la boutique ?', [
+      { text: 'Annuler', style: 'cancel' },
+      {
+        text: 'Supprimer',
+        style: 'destructive',
+        onPress: async () => {
+          setDeletingLogo(true);
+          try {
+            const updatedSettings = await deleteCommerceLogo(commerceSettingsId);
+            setLogoUrl(updatedSettings.logoUrl);
+            await refreshAppSettings();
+            Alert.alert('Succes', 'Logo supprime.');
+          } catch (logoError) {
+            Alert.alert('Erreur logo', getErrorMessage(logoError));
+          } finally {
+            setDeletingLogo(false);
+          }
+        },
+      },
+    ]);
+  };
+
   const handleSendVerification = async () => {
     if (!session?.email) {
       Alert.alert('Session', 'Aucun email de session disponible.');
@@ -249,7 +458,10 @@ export function ParametresScreen({
     return <ErrorState title='Erreur parametres' message={error} onRetry={() => void loadSettings()} />;
   }
 
+  const resolvedLogoUri = resolveLogoUri(logoUrl);
+
   return (
+    <>
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
@@ -279,6 +491,35 @@ export function ParametresScreen({
           autoCapitalize='characters'
           maxLength={3}
         />
+
+        <View style={styles.logoBox}>
+          {resolvedLogoUri ? (
+            <Image source={{ uri: resolvedLogoUri }} style={styles.logoPreview} resizeMode='contain' />
+          ) : (
+            <View style={styles.logoPlaceholder}>
+              <Feather name='image' size={20} color={colors.neutral500} />
+              <Text style={styles.note}>Aucun logo</Text>
+            </View>
+          )}
+          <View style={styles.logoActions}>
+            <AppButton
+              label={logoUrl ? 'Changer le logo' : 'Ajouter un logo'}
+              variant='outline'
+              onPress={() => {
+                void handlePickLogo();
+              }}
+              loading={uploadingLogo}
+            />
+            {logoUrl ? (
+              <AppButton
+                label='Supprimer'
+                variant='ghost'
+                onPress={handleDeleteLogo}
+                loading={deletingLogo}
+              />
+            ) : null}
+          </View>
+        </View>
 
         <Text style={styles.note}>
           Champs non supportes par l API actuelle masques pour le MVP: adresse, email boutique, notifications.
@@ -392,6 +633,12 @@ export function ParametresScreen({
         </Text>
 
         <AppButton
+          label='Changer le mot de passe'
+          variant='outline'
+          onPress={() => setShowPasswordModal(true)}
+        />
+
+        <AppButton
           label={sendingVerification ? 'Envoi verification...' : 'Renvoyer l email de verification'}
           variant='outline'
           onPress={() => {
@@ -403,6 +650,57 @@ export function ParametresScreen({
         <AppButton label='Deconnexion' variant='danger' onPress={handleLogout} />
       </AppCard>
     </ScrollView>
+
+    <FormModal
+      visible={showPasswordModal}
+      title='Changer le mot de passe'
+      onClose={resetPasswordModal}
+    >
+      <InputField
+        label='Mot de passe actuel'
+        value={currentPassword}
+        onChangeText={setCurrentPassword}
+        secureTextEntry
+        textContentType='password'
+        autoCapitalize='none'
+      />
+      <InputField
+        label='Nouveau mot de passe'
+        value={newPassword}
+        onChangeText={setNewPassword}
+        secureTextEntry
+        textContentType='newPassword'
+        autoCapitalize='none'
+      />
+      <InputField
+        label='Confirmer le mot de passe'
+        value={confirmPassword}
+        onChangeText={setConfirmPassword}
+        secureTextEntry
+        textContentType='newPassword'
+        autoCapitalize='none'
+      />
+      <View style={styles.actionRow}>
+        <View style={styles.actionItem}>
+          <AppButton
+            label='Retour'
+            variant='outline'
+            onPress={resetPasswordModal}
+            disabled={changingPassword}
+          />
+        </View>
+        <View style={styles.actionItem}>
+          <AppButton
+            label='Enregistrer'
+            onPress={() => {
+              void handleChangePassword();
+            }}
+            loading={changingPassword}
+          />
+        </View>
+      </View>
+    </FormModal>
+    </>
   );
 }
 
@@ -478,5 +776,42 @@ const styles = StyleSheet.create({
   },
   userActionsButton: {
     padding: 6,
+  },
+  logoBox: {
+    gap: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.neutral200,
+    borderRadius: 8,
+    backgroundColor: colors.neutral50,
+  },
+  logoPreview: {
+    width: '100%',
+    height: 96,
+    borderRadius: 8,
+    backgroundColor: colors.white,
+  },
+  logoPlaceholder: {
+    height: 96,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.neutral300,
+    backgroundColor: colors.white,
+  },
+  logoActions: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 6,
+  },
+  actionItem: {
+    flex: 1,
   },
 });

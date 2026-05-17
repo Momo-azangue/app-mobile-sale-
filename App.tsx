@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, StatusBar, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { AppState, Linking, StatusBar, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import {
   Inter_400Regular,
@@ -27,6 +27,8 @@ import { CategoriesScreen } from './src/screens/Categories';
 import { FacturesScreen } from './src/screens/Factures';
 import { InvitationsScreen } from './src/screens/Invitations';
 import { LoginScreen } from './src/screens/auth/Login';
+import { AcceptInvitationDeepLinkScreen } from './src/screens/auth/AcceptInvitationDeepLink';
+import { ResetPasswordDeepLinkScreen } from './src/screens/auth/ResetPasswordDeepLink';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { AppSettingsProvider, useAppSettings } from './src/context/AppSettingsContext';
 import { colors } from './src/theme/tokens';
@@ -34,6 +36,34 @@ import { type NavigationTab } from './src/navigation/tabs';
 
 const AUTO_REFRESH_TABS: NavigationTab[] = ['dashboard', 'ventes', 'stocks', 'factures'];
 const AUTO_REFRESH_INTERVAL_MS = 3600_000;
+
+type ActiveDeepLink =
+  | { type: 'reset-password'; token: string }
+  | { type: 'accept-invitation'; token: string };
+
+function parseDeepLink(url: string): ActiveDeepLink | null {
+  const [rawPath, rawQuery = ''] = url.split('?');
+  const normalizedPath = rawPath.toLowerCase();
+  const token = extractQueryParam(rawQuery, 'token');
+
+  if (normalizedPath.includes('reset-password')) {
+    return { type: 'reset-password', token };
+  }
+  if (normalizedPath.includes('accept-invitation')) {
+    return { type: 'accept-invitation', token };
+  }
+  return null;
+}
+
+function extractQueryParam(query: string, key: string): string {
+  const entries = query.split('&').filter(Boolean);
+  const match = entries.find((entry) => decodeURIComponent(entry.split('=')[0] ?? '') === key);
+  if (!match) {
+    return '';
+  }
+  const [, rawValue = ''] = match.split('=');
+  return decodeURIComponent(rawValue.replace(/\+/g, ' '));
+}
 
 function AppShell() {
   const { session, isBooting, logout } = useAuth();
@@ -49,6 +79,7 @@ function AppShell() {
   // vérifier autre chose ; reset explicite via le bouton retour.
   const [selectedProductId, setSelectedProductId] = useState<string | null>(null);
   const [selectedProductVariantId, setSelectedProductVariantId] = useState<string | null>(null);
+  const [activeDeepLink, setActiveDeepLink] = useState<ActiveDeepLink | null>(null);
   const [refreshSignal, setRefreshSignal] = useState(0);
   const appStateRef = useRef(AppState.currentState);
 
@@ -66,7 +97,30 @@ function AppShell() {
   const handleTabChange = useCallback((tab: NavigationTab) => {
     setSelectedProductId(null);
     setSelectedProductVariantId(null);
+    setActiveDeepLink(null);
     setActiveTab(tab);
+  }, []);
+
+  useEffect(() => {
+    const handleUrl = (url: string | null) => {
+      if (!url) {
+        return;
+      }
+      const parsed = parseDeepLink(url);
+      if (parsed) {
+        setShowNewSale(false);
+        setShowMoreDrawer(false);
+        setSelectedProductId(null);
+        setSelectedProductVariantId(null);
+        setActiveDeepLink(parsed);
+      }
+    };
+
+    void Linking.getInitialURL().then(handleUrl);
+    const subscription = Linking.addEventListener('url', ({ url }) => handleUrl(url));
+    return () => {
+      subscription.remove();
+    };
   }, []);
 
   const isAutoRefreshEnabled = Boolean(
@@ -112,6 +166,24 @@ function AppShell() {
   }, [bumpRefresh, isAutoRefreshEnabled]);
 
   const content = useMemo(() => {
+    if (activeDeepLink?.type === 'reset-password') {
+      return (
+        <ResetPasswordDeepLinkScreen
+          token={activeDeepLink.token}
+          onDone={() => setActiveDeepLink(null)}
+        />
+      );
+    }
+
+    if (activeDeepLink?.type === 'accept-invitation') {
+      return (
+        <AcceptInvitationDeepLinkScreen
+          token={activeDeepLink.token}
+          onDone={() => setActiveDeepLink(null)}
+        />
+      );
+    }
+
     if (!session) {
       return <LoginScreen />;
     }
@@ -179,7 +251,7 @@ function AppShell() {
       default:
         return <DashboardScreen refreshSignal={refreshSignal} />;
     }
-  }, [activeTab, bumpRefresh, logout, refreshSignal, selectedProductId, selectedProductVariantId, session, showNewSale]);
+  }, [activeDeepLink, activeTab, bumpRefresh, logout, refreshSignal, selectedProductId, selectedProductVariantId, session, showNewSale]);
 
   if (isBooting) {
     return (
@@ -189,7 +261,8 @@ function AppShell() {
     );
   }
 
-  const isDesktopLayout = Boolean(session) && width >= 1024 && !showNewSale;
+  const isDeepLinkActive = activeDeepLink !== null;
+  const isDesktopLayout = Boolean(session) && width >= 1024 && !showNewSale && !isDeepLinkActive;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -203,7 +276,7 @@ function AppShell() {
         </View>
       ) : (
         <>
-          {session && !showNewSale ? (
+          {session && !showNewSale && !isDeepLinkActive ? (
             <MobileTopBar
               activeTab={activeTab}
               onOpenDrawer={() => {
@@ -212,7 +285,7 @@ function AppShell() {
             />
           ) : null}
           <View style={styles.container}>{content}</View>
-          {session && !showNewSale && (
+          {session && !showNewSale && !isDeepLinkActive && (
             <View style={styles.bottomBar}>
               <BottomNavigation
                 activeTab={activeTab}
@@ -223,7 +296,7 @@ function AppShell() {
               />
             </View>
           )}
-          {session && !showNewSale ? (
+          {session && !showNewSale && !isDeepLinkActive ? (
             <MoreDrawer
               visible={showMoreDrawer}
               activeTab={activeTab}

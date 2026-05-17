@@ -1,4 +1,4 @@
-const FALLBACK_API_BASE_URL ='http://192.168.1.69:8080'
+const FALLBACK_API_BASE_URL ='http://192.168.1.68:8080'
 
 //'http://192.168.1.69:8080'
 // 'http://172.20.1.127:8080'

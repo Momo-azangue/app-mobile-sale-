@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { inviteUserToTenant, listInvitations, revokeInvitation } from '../api/services';
+import { inviteUserToTenant, listInvitations, resendInvitation, revokeInvitation } from '../api/services';
 import { getErrorMessage } from '../api/errors';
 import type { InvitationResponseDTO, InvitationRole, InvitationStatus } from '../types/api';
 import { useAuth } from '../context/AuthContext';
@@ -36,6 +36,7 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
   const { session } = useAuth();
 
   const [saving, setSaving] = useState(false);
+  const [resendingId, setResendingId] = useState<string | null>(null);
 
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [email, setEmail] = useState('');
@@ -134,6 +135,19 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
     );
   };
 
+  const handleResendInvitation = async (invitation: InvitationResponseDTO) => {
+    setResendingId(invitation.id);
+    try {
+      await resendInvitation(invitation.id);
+      await loadInvitations(false);
+      Alert.alert('Succes', 'Invitation renvoyee.');
+    } catch (resendError) {
+      Alert.alert('Erreur', getErrorMessage(resendError));
+    } finally {
+      setResendingId(null);
+    }
+  };
+
   if (loading) {
     return <LoadingState message='Chargement invitations...' />;
   }
@@ -183,6 +197,14 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
 
                   {invitation.status === 'PENDING' ? (
                     <View style={styles.actionRowInline}>
+                      <AppButton
+                        label='Renvoyer'
+                        variant='ghost'
+                        onPress={() => {
+                          void handleResendInvitation(invitation);
+                        }}
+                        loading={resendingId === invitation.id}
+                      />
                       <AppButton
                         label='Révoquer'
                         variant='outline'
@@ -318,6 +340,8 @@ const styles = StyleSheet.create({
   },
   actionRowInline: {
     marginTop: 6,
+    flexDirection: 'row',
+    gap: 10,
     alignSelf: 'flex-end',
   },
   actionItem: {

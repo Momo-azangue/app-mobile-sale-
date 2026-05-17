@@ -34,12 +34,19 @@
         {
           "cameraPermission": "L'accès à la caméra permet de scanner les codes-barres et IMEI des produits."
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "L'acces aux photos permet de choisir le logo de la boutique."
+        }
       ]
     ],
     "extra": {
       "eas": {
         "projectId": "0526e929-7020-4760-9a46-fa9b1e7572ac"
       }
-    }
+    },
+    "scheme": "myapp"
   }
 }

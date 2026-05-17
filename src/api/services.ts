@@ -44,12 +44,14 @@ import type {
   StockMovementRequestDTO,
   StockMovementResponseDTO,
   SubscriptionPlanDTO,
+  SupplierDebtResponseDTO,
   TenantRequestDTO,
   TenantResponseDTO,
   TokenValidationResponseDTO,
   TrackingMode,
   UnreadCountResponseDTO,
   UserResponseDTO,
+  UserRole,
   UserStatus,
   UserStatusUpdateRequestDTO,
   VariantLookupResponseDTO,
@@ -715,6 +717,12 @@ export async function updateUserStatus(
   return data;
 }
 
+export async function updateUserRole(userId: string, role: UserRole): Promise<void> {
+  await api.put(`/api/v1/users/${userId}/role`, null, {
+    params: { role },
+  });
+}
+
 // ── User self-service (current user) ──────────────────────────────────────────
 
 export async function getCurrentUser(): Promise<UserResponseDTO> {
@@ -739,6 +747,11 @@ export async function getSalesSummary(
 
 export async function getInvoicesSummary(): Promise<InvoicesSummaryResponseDTO> {
   const { data } = await api.get<InvoicesSummaryResponseDTO>('/api/v1/reports/invoices-summary');
+  return data;
+}
+
+export async function getSupplierDebts(): Promise<SupplierDebtResponseDTO[]> {
+  const { data } = await api.get<SupplierDebtResponseDTO[]>('/api/v1/reports/supplier-debts');
   return data;
 }
 

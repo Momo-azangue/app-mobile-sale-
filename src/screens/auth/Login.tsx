@@ -14,6 +14,7 @@ import type { ChipOption } from '../../components/common/ChipGroup';
 import { FormModal } from '../../components/common/FormModal';
 import { InputField } from '../../components/common/InputField';
 import { SegmentedControl } from '../../components/common/SegmentedControl';
+import { getPasswordValidationMessage, isStrongPassword } from '../../utils/password';
 import { DesktopPromoPanel } from './components/DesktopPromoPanel';
 import { LoginFormSection } from './components/LoginFormSection';
 import { RegisterFormSection } from './components/RegisterFormSection';
@@ -85,7 +86,7 @@ export function LoginScreen() {
   const canRegister =
     registerName.trim().length > 0 &&
     registerEmail.trim().length > 0 &&
-    registerPassword.trim().length >= 8 &&
+    isStrongPassword(registerPassword) &&
     storeName.trim().length > 0 &&
     !isAuthenticating;
 
@@ -117,6 +118,10 @@ export function LoginScreen() {
 
   const onRegisterSubmit = async () => {
     if (!canRegister) {
+      const passwordValidationMessage = getPasswordValidationMessage(registerPassword);
+      if (passwordValidationMessage) {
+        setError(passwordValidationMessage);
+      }
       return;
     }
 
