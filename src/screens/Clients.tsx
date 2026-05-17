@@ -11,12 +11,13 @@ import { EmptyState } from '../components/common/EmptyState';
 import { ErrorState } from '../components/common/ErrorState';
 import { FloatingActionButton } from '../components/common/FloatingActionButton';
 import { FormModal } from '../components/common/FormModal';
-import { LoadingState } from '../components/common/LoadingState';
+import { SkeletonList } from '../components/common/SkeletonList';
 import { SearchField } from '../components/common/SearchField';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { AppButton } from '../components/common/AppButton';
 import { AppCard } from '../components/common/AppCard';
 import { InputField } from '../components/common/InputField';
+import { useToast } from '../components/common/ToastProvider';
 import { useCachedResource } from '../hooks/useCachedResource';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
@@ -26,6 +27,7 @@ interface ClientsScreenProps {
 }
 
 export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenProps) {
+  const toast = useToast();
   const [saving, setSaving] = useState(false);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -103,6 +105,7 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
 
       await loadClients(false);
       onClientChanged();
+      toast.success('Client cree.');
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {
@@ -121,6 +124,7 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
             await deleteClient(client.id);
             await loadClients(false);
             onClientChanged();
+            toast.success('Client supprime.');
           } catch (deleteError) {
             Alert.alert('Erreur', getErrorMessage(deleteError));
           }
@@ -157,6 +161,7 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
       closeEditModal();
       await loadClients(false);
       onClientChanged();
+      toast.success('Client mis a jour.');
     } catch (updateError) {
       Alert.alert('Erreur', getErrorMessage(updateError));
     } finally {
@@ -165,7 +170,7 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
   };
 
   if (loading) {
-    return <LoadingState message='Chargement clients...' />;
+    return <SkeletonList />;
   }
 
   if (error) {
@@ -190,7 +195,13 @@ export function ClientsScreen({ refreshSignal, onClientChanged }: ClientsScreenP
         />
 
         {filteredClients.length === 0 ? (
-          <EmptyState icon='users' title='Aucun client' description='Ajoutez votre premier client pour demarrer les ventes.' />
+          <EmptyState
+            icon='users'
+            title='Aucun client'
+            description='Ajoutez votre premier client pour demarrer les ventes.'
+            actionLabel='Ajouter'
+            onAction={() => setShowCreateForm(true)}
+          />
         ) : (
           <View style={styles.list}>
             {filteredClients.map((client) => (

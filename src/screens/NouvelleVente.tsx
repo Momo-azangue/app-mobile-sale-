@@ -31,6 +31,7 @@ import { BarcodeScanner } from '../components/common/BarcodeScanner';
 import { ChipGroup, type ChipOption } from '../components/common/ChipGroup';
 import { InputField } from '../components/common/InputField';
 import { SearchableSelectField, type SearchableSelectOption } from '../components/common/SearchableSelectField';
+import { useToast } from '../components/common/ToastProvider';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 import { ImeiCaptureRow } from './sales/ImeiCaptureRow';
 
@@ -116,6 +117,7 @@ function formatSaleError(error: unknown): string {
 }
 
 export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: NouvelleVenteProps) {
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -456,7 +458,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
       await createSale(payload);
       onCreated();
       onBack();
-      Alert.alert('Succes', 'Vente creee avec succes.');
+      toast.success('Vente creee avec succes.');
     } catch (caught) {
       const message = formatSaleError(caught);
       setSubmitError(message);

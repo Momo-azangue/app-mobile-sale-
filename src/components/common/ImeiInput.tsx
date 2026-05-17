@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
   },
   scannerContainer: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: colors.neutral900,
   },
   camera: {
     flex: 1,
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingBottom: 48,
     gap: 16,
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: colors.overlayDark,
   },
   scannerHint: {
     gap: 4,

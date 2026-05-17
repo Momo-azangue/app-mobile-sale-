@@ -29,7 +29,8 @@ import { colors, radius, shadows } from '../../theme/tokens';
 import { typography } from '../../theme/typography';
 import { AppButton } from '../../components/common/AppButton';
 import { ErrorState } from '../../components/common/ErrorState';
-import { LoadingState } from '../../components/common/LoadingState';
+import { SkeletonList } from '../../components/common/SkeletonList';
+import { useToast } from '../../components/common/ToastProvider';
 import { useCachedResource } from '../../hooks/useCachedResource';
 import { usePullToRefresh } from '../../hooks/usePullToRefresh';
 import { VariantFormModal } from './VariantFormModal';
@@ -112,6 +113,7 @@ export function ProductDetailScreen({
   onBack,
 }: ProductDetailScreenProps) {
   const fmtCurrency = useFormatCurrency();
+  const toast = useToast();
   const [variantModalVisible, setVariantModalVisible] = useState(false);
   const [editingVariant, setEditingVariant] = useState<ProductVariantResponseDTO | null>(null);
   const [savingVariant, setSavingVariant] = useState(false);
@@ -182,6 +184,7 @@ export function ProductDetailScreen({
       }
       closeVariantModal();
       await reload('silent');
+      toast.success(editingVariant ? 'Variante mise a jour.' : 'Variante creee.');
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {
@@ -199,6 +202,7 @@ export function ProductDetailScreen({
           try {
             await deleteProductVariant(productId, variant.id);
             await reload('silent');
+            toast.success('Variante supprimee.');
           } catch (deleteError) {
             Alert.alert('Erreur', getErrorMessage(deleteError));
           }
@@ -208,7 +212,7 @@ export function ProductDetailScreen({
   };
 
   if (loading) {
-    return <LoadingState message='Chargement produit...' />;
+    return <SkeletonList variant='detail' count={5} />;
   }
 
   if (error || !data) {

@@ -8,10 +8,10 @@ import { formatDate } from '../utils/format';
 import type { InvoiceResponseDTO, InvoiceStatus, SaleResponseDTO } from '../types/api';
 import { colors, radius, shadows } from '../theme/tokens';
 import { typography } from '../theme/typography';
-import { LoadingState } from '../components/common/LoadingState';
 import { ErrorState } from '../components/common/ErrorState';
 import { EmptyState } from '../components/common/EmptyState';
 import { FormModal } from '../components/common/FormModal';
+import { SkeletonList } from '../components/common/SkeletonList';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
@@ -179,7 +179,7 @@ export function VentesScreen({ onCreateNew, refreshSignal }: VentesScreenProps) 
   const extraFilterCount = periodFilter === 'all' ? 0 : 1;
 
   if (loading) {
-    return <LoadingState message='Chargement ventes...' />;
+    return <SkeletonList />;
   }
 
   if (error) {

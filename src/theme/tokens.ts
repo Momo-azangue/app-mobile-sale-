@@ -25,6 +25,10 @@ export const colors = {
   danger600: '#B91C1C',
   danger500: '#DC2626',
   danger100: '#FEE2E2',
+
+  overlaySoft: 'rgba(15, 23, 42, 0.28)',
+  overlayModal: 'rgba(15, 23, 42, 0.35)',
+  overlayDark: 'rgba(15, 23, 42, 0.64)',
 } as const;
 
 export const radius = {

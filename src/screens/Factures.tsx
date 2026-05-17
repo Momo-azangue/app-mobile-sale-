@@ -33,11 +33,12 @@ import { EmptyState } from '../components/common/EmptyState';
 import { ErrorState } from '../components/common/ErrorState';
 import { FormModal } from '../components/common/FormModal';
 import { InputField } from '../components/common/InputField';
-import { LoadingState } from '../components/common/LoadingState';
+import { SkeletonList } from '../components/common/SkeletonList';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
 import { SegmentedControl, type SegmentedOption } from '../components/common/SegmentedControl';
 import { StatusBadge } from '../components/common/StatusBadge';
+import { useToast } from '../components/common/ToastProvider';
 import { useCachedResource } from '../hooks/useCachedResource';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
@@ -68,6 +69,7 @@ function toPdfUrl(invoiceId: string): string {
 export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
   const { session } = useAuth();
   const fmtCurrency = useFormatCurrency();
+  const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
 
@@ -217,6 +219,7 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
 
       closeManualModal();
       await loadData(false);
+      toast.success('Facture creee.');
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {
@@ -235,6 +238,7 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
       await createInvoiceFromSale(selectedSaleId);
       closeFromSaleModal();
       await loadData(false);
+      toast.success('Facture creee depuis la vente.');
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {
@@ -281,6 +285,7 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
 
       closePaymentModal();
       await loadData(false);
+      toast.success('Paiement enregistre.');
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {
@@ -305,6 +310,7 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
         anchor.download = `${invoice.invoiceNumber || invoice.id}.pdf`;
         anchor.click();
         URL.revokeObjectURL(objectUrl);
+        toast.success('PDF telecharge.');
       } else {
         if (!session?.accessToken) {
           throw new Error('Session invalide pour le telechargement PDF.');
@@ -325,7 +331,7 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
             dialogTitle: 'Partager la facture PDF',
           });
         } else {
-          Alert.alert('PDF telecharge', downloaded.uri);
+          toast.success('PDF telecharge.');
         }
       }
     } catch (downloadError) {
@@ -336,7 +342,7 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
   };
 
   if (loading) {
-    return <LoadingState message='Chargement factures...' />;
+    return <SkeletonList />;
   }
 
   if (error) {

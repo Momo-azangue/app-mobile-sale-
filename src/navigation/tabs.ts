@@ -3,6 +3,7 @@ import { Feather } from '@expo/vector-icons';
 
 export type NavigationTab =
   | 'dashboard'
+  | 'rapports'
   | 'ventes'
   | 'stocks'
   | 'clients'
@@ -26,6 +27,7 @@ export const MOBILE_PRIMARY_TABS: NavigationItem[] = [
 ];
 
 export const SECONDARY_TABS: NavigationItem[] = [
+  { id: 'rapports', label: 'Rapports', icon: 'bar-chart-2' },
   { id: 'fournisseurs', label: 'Fournisseurs', icon: 'truck' },
   { id: 'categories', label: 'Categories', icon: 'tag' },
   { id: 'factures', label: 'Factures', icon: 'file-text' },

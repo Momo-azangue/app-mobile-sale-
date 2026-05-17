@@ -30,6 +30,7 @@ import { AppButton } from '../components/common/AppButton';
 import { AppCard } from '../components/common/AppCard';
 import { InputField } from '../components/common/InputField';
 import { FormModal } from '../components/common/FormModal';
+import { useToast } from '../components/common/ToastProvider';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 import { getPasswordValidationMessage } from '../utils/password';
 import type { TenantResponseDTO, UserResponseDTO, UserRole, UserStatus } from '../types/api';
@@ -42,10 +43,10 @@ const USER_STATUS_LABELS: Record<UserStatus, string> = {
 };
 
 const USER_STATUS_COLORS: Record<UserStatus, string> = {
-  ACTIVE: '#16a34a',     // vert
-  SUSPENDED: '#f59e0b',  // ambre
-  BLOCKED: '#dc2626',    // rouge
-  REVOKED: '#6b7280',    // gris
+  ACTIVE: colors.success600,
+  SUSPENDED: colors.warning600,
+  BLOCKED: colors.danger500,
+  REVOKED: colors.neutral500,
 };
 
 const USER_ROLE_LABELS: Record<UserRole, string> = {
@@ -87,6 +88,7 @@ export function ParametresScreen({
 }: ParametresScreenProps) {
   const { session } = useAuth();
   const { refresh: refreshAppSettings } = useAppSettings();
+  const toast = useToast();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -190,7 +192,7 @@ export function ParametresScreen({
       // 3. Propage la nouvelle devise/nom à toute l'app (TopBar, Dashboard, etc.)
       await refreshAppSettings();
 
-      Alert.alert('Succes', 'Parametres enregistres.');
+      toast.success('Parametres enregistres.');
       onSettingsChanged();
       await loadSettings();
     } catch (saveError) {
@@ -278,7 +280,7 @@ export function ParametresScreen({
     }
     try {
       await updateUserStatus(user.id, { status: newStatus });
-      Alert.alert('Succès', `${user.name ?? user.email} est maintenant ${USER_STATUS_LABELS[newStatus]}.`);
+      toast.success(`${user.name ?? user.email} est maintenant ${USER_STATUS_LABELS[newStatus]}.`);
       await loadSettings(false);
     } catch (statusError) {
       Alert.alert('Erreur', getErrorMessage(statusError));
@@ -307,7 +309,7 @@ export function ParametresScreen({
     }
     try {
       await updateUserRole(user.id, newRole);
-      Alert.alert('Succes', `${user.name ?? user.email} est maintenant ${newRole}.`);
+      toast.success(`${user.name ?? user.email} est maintenant ${newRole}.`);
       await loadSettings(false);
     } catch (roleError) {
       Alert.alert('Erreur', getErrorMessage(roleError));
@@ -340,7 +342,7 @@ export function ParametresScreen({
     try {
       await changeMyPassword({ currentPassword, newPassword });
       resetPasswordModal();
-      Alert.alert('Succes', 'Mot de passe modifie.');
+      toast.success('Mot de passe modifie.');
     } catch (passwordError) {
       Alert.alert('Erreur', getErrorMessage(passwordError));
     } finally {
@@ -395,7 +397,7 @@ export function ParametresScreen({
       });
       setLogoUrl(updatedSettings.logoUrl);
       await refreshAppSettings();
-      Alert.alert('Succes', 'Logo mis a jour.');
+      toast.success('Logo mis a jour.');
     } catch (logoError) {
       Alert.alert('Erreur logo', getErrorMessage(logoError));
     } finally {
@@ -419,7 +421,7 @@ export function ParametresScreen({
             const updatedSettings = await deleteCommerceLogo(commerceSettingsId);
             setLogoUrl(updatedSettings.logoUrl);
             await refreshAppSettings();
-            Alert.alert('Succes', 'Logo supprime.');
+            toast.success('Logo supprime.');
           } catch (logoError) {
             Alert.alert('Erreur logo', getErrorMessage(logoError));
           } finally {
@@ -432,17 +434,14 @@ export function ParametresScreen({
 
   const handleSendVerification = async () => {
     if (!session?.email) {
-      Alert.alert('Session', 'Aucun email de session disponible.');
+      toast.info('Aucun email de session disponible.');
       return;
     }
 
     setSendingVerification(true);
     try {
       await requestEmailVerification({ email: session.email });
-      Alert.alert(
-        'Verification email',
-        'Si le compte en a besoin, un email de verification a ete envoye.',
-      );
+      toast.info('Si le compte en a besoin, un email de verification a ete envoye.', 'Verification email');
     } catch (verificationError) {
       Alert.alert('Erreur verification', getErrorMessage(verificationError));
     } finally {

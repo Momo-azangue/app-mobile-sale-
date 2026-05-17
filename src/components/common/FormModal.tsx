@@ -64,7 +64,7 @@ const styles = StyleSheet.create({
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.35)',
+    backgroundColor: colors.overlayModal,
   },
   dialog: {
     width: '100%',

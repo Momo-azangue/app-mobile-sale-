@@ -14,9 +14,10 @@ import { ErrorState } from '../components/common/ErrorState';
 import { FloatingActionButton } from '../components/common/FloatingActionButton';
 import { FormModal } from '../components/common/FormModal';
 import { InputField } from '../components/common/InputField';
-import { LoadingState } from '../components/common/LoadingState';
+import { SkeletonList } from '../components/common/SkeletonList';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
+import { useToast } from '../components/common/ToastProvider';
 import { useCachedResource } from '../hooks/useCachedResource';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
@@ -25,6 +26,7 @@ interface CategoriesScreenProps {
 }
 
 export function CategoriesScreen({ refreshSignal }: CategoriesScreenProps) {
+  const toast = useToast();
   const [saving, setSaving] = useState(false);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -95,6 +97,7 @@ export function CategoriesScreen({ refreshSignal }: CategoriesScreenProps) {
 
       closeCreateModal();
       await loadCategories(false);
+      toast.success('Categorie creee.');
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {
@@ -112,6 +115,7 @@ export function CategoriesScreen({ refreshSignal }: CategoriesScreenProps) {
           try {
             await deleteCategory(category.id);
             await loadCategories(false);
+            toast.success('Categorie supprimee.');
           } catch (deleteError) {
             Alert.alert('Erreur', getErrorMessage(deleteError));
           }
@@ -144,6 +148,7 @@ export function CategoriesScreen({ refreshSignal }: CategoriesScreenProps) {
       });
       closeEditModal();
       await loadCategories(false);
+      toast.success('Categorie mise a jour.');
     } catch (updateError) {
       Alert.alert('Erreur', getErrorMessage(updateError));
     } finally {
@@ -152,7 +157,7 @@ export function CategoriesScreen({ refreshSignal }: CategoriesScreenProps) {
   };
 
   if (loading) {
-    return <LoadingState message='Chargement categories...' />;
+    return <SkeletonList />;
   }
 
   if (error) {

@@ -15,10 +15,11 @@ import { ErrorState } from '../components/common/ErrorState';
 import { FloatingActionButton } from '../components/common/FloatingActionButton';
 import { FormModal } from '../components/common/FormModal';
 import { InputField } from '../components/common/InputField';
-import { LoadingState } from '../components/common/LoadingState';
+import { SkeletonList } from '../components/common/SkeletonList';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
 import { SegmentedControl, type SegmentedOption } from '../components/common/SegmentedControl';
+import { useToast } from '../components/common/ToastProvider';
 import { useCachedResource } from '../hooks/useCachedResource';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
@@ -40,6 +41,7 @@ const TAB_OPTIONS: SegmentedOption[] = [
 
 export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
   const formatCurrency = useFormatCurrency();
+  const toast = useToast();
   const [saving, setSaving] = useState(false);
 
   const [activeTab, setActiveTab] = useState<FournisseursTab>('dettes');
@@ -135,6 +137,7 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
 
       closeCreateModal();
       await loadFournisseurs(false);
+      toast.success('Fournisseur cree.');
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {
@@ -152,6 +155,7 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
           try {
             await deleteProvider(provider.id);
             await loadFournisseurs(false);
+            toast.success('Fournisseur supprime.');
           } catch (deleteError) {
             Alert.alert('Erreur', getErrorMessage(deleteError));
           }
@@ -189,6 +193,7 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
 
       closeEditModal();
       await loadFournisseurs(false);
+      toast.success('Fournisseur mis a jour.');
     } catch (updateError) {
       Alert.alert('Erreur', getErrorMessage(updateError));
     } finally {
@@ -197,7 +202,7 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
   };
 
   if (loading) {
-    return <LoadingState message='Chargement fournisseurs...' />;
+    return <SkeletonList />;
   }
 
   if (error) {

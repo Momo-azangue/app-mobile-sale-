@@ -24,11 +24,12 @@ import { ErrorState } from '../components/common/ErrorState';
 import { FormModal } from '../components/common/FormModal';
 import { ImeiInput } from '../components/common/ImeiInput';
 import { InputField } from '../components/common/InputField';
-import { LoadingState } from '../components/common/LoadingState';
+import { SkeletonList } from '../components/common/SkeletonList';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchableSelectField, type SearchableSelectOption } from '../components/common/SearchableSelectField';
 import { SearchField } from '../components/common/SearchField';
 import { SegmentedControl } from '../components/common/SegmentedControl';
+import { useToast } from '../components/common/ToastProvider';
 import { useCachedResource } from '../hooks/useCachedResource';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 import { useFormatCurrency } from '../context/AppSettingsContext';
@@ -161,6 +162,7 @@ function movementVisual(type: MovementType): MovementVisual {
 
 export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct }: StocksScreenProps) {
   const fmtCurrency = useFormatCurrency();
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<'produits' | 'mouvements'>('produits');
   const [productQuery, setProductQuery] = useState('');
   const [movementQuery, setMovementQuery] = useState('');
@@ -385,11 +387,13 @@ export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct 
         await updateProduct(editingProduct.id, payload);
         closeProductModal();
         await loadStockData(false);
+        toast.success('Produit mis a jour.');
       } else {
         const created = await createProduct(payload);
         closeProductModal();
         await loadStockData(false);
         onSelectProduct?.(created.id);
+        toast.success('Produit cree.');
       }
       onProductChanged?.();
     } catch (saveError) {
@@ -410,6 +414,7 @@ export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct 
             await deleteProduct(product.id);
             await loadStockData(false);
             onProductChanged?.();
+            toast.success('Produit supprime.');
           } catch (deleteError) {
             Alert.alert('Erreur', getErrorMessage(deleteError));
           }
@@ -533,6 +538,7 @@ export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct 
       closeMovementModal();
       await loadStockData(false);
       onProductChanged?.();
+      toast.success('Mouvement ajoute.');
     } catch (createError) {
       Alert.alert('Erreur', getErrorMessage(createError));
     } finally {
@@ -541,7 +547,7 @@ export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct 
   };
 
   if (loading) {
-    return <LoadingState message='Chargement stock...' />;
+    return <SkeletonList />;
   }
 
   if (error) {
@@ -640,6 +646,8 @@ export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct 
                 icon='package'
                 title='Aucun produit'
                 description='Ajoutez un modele ou modifiez la recherche.'
+                actionLabel='Nouveau produit'
+                onAction={openCreateProductModal}
               />
             ) : (
               <View style={styles.list}>
@@ -708,6 +716,8 @@ export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct 
                 icon='repeat'
                 title='Aucun mouvement'
                 description='Ajoutez votre premier mouvement de stock.'
+                actionLabel='Nouveau mouvement'
+                onAction={() => setShowMovementModal(true)}
               />
             ) : (
               <View style={styles.list}>

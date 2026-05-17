@@ -15,7 +15,9 @@ import { SideNavigation } from './src/components/SideNavigation';
 import { MoreDrawer } from './src/components/MoreDrawer';
 import { MobileTopBar } from './src/components/MobileTopBar';
 import { LoadingState } from './src/components/common/LoadingState';
+import { ToastProvider } from './src/components/common/ToastProvider';
 import { DashboardScreen } from './src/screens/Dashboard';
+import { RapportsScreen } from './src/screens/Rapports';
 import { VentesScreen } from './src/screens/Ventes';
 import { StocksScreen } from './src/screens/Stocks';
 import { ProductDetailScreen } from './src/screens/stocks/ProductDetail';
@@ -34,7 +36,7 @@ import { AppSettingsProvider, useAppSettings } from './src/context/AppSettingsCo
 import { colors } from './src/theme/tokens';
 import { type NavigationTab } from './src/navigation/tabs';
 
-const AUTO_REFRESH_TABS: NavigationTab[] = ['dashboard', 'ventes', 'stocks', 'factures'];
+const AUTO_REFRESH_TABS: NavigationTab[] = ['dashboard', 'rapports', 'ventes', 'stocks', 'factures'];
 const AUTO_REFRESH_INTERVAL_MS = 3600_000;
 
 type ActiveDeepLink =
@@ -204,6 +206,8 @@ function AppShell() {
     switch (activeTab) {
       case 'dashboard':
         return <DashboardScreen refreshSignal={refreshSignal} />;
+      case 'rapports':
+        return <RapportsScreen refreshSignal={refreshSignal} />;
       case 'ventes':
         return <VentesScreen refreshSignal={refreshSignal} onCreateNew={() => setShowNewSale(true)} />;
       case 'stocks':
@@ -332,11 +336,13 @@ export default function App() {
           <LoadingState message='Chargement de l interface...' />
         </SafeAreaView>
       ) : (
-        <AuthProvider>
-          <AppSettingsProvider>
-            <AppShell />
-          </AppSettingsProvider>
-        </AuthProvider>
+        <ToastProvider>
+          <AuthProvider>
+            <AppSettingsProvider>
+              <AppShell />
+            </AppSettingsProvider>
+          </AuthProvider>
+        </ToastProvider>
       )}
     </SafeAreaProvider>
   );

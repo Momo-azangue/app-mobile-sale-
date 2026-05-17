@@ -227,7 +227,6 @@ export function BarcodeScanner({ visible, onClose, onScan, expect = 'product', h
 }
 
 const FRAME_HEIGHT = 190;
-const MASK_COLOR = 'rgba(0,0,0,0.6)';
 
 const styles = StyleSheet.create({
   container: {
@@ -242,7 +241,7 @@ const styles = StyleSheet.create({
   },
   maskRow: {
     flex: 1,
-    backgroundColor: MASK_COLOR,
+    backgroundColor: colors.overlayDark,
   },
   maskCenter: {
     flexDirection: 'row',
@@ -250,7 +249,7 @@ const styles = StyleSheet.create({
   },
   maskSide: {
     flex: 1,
-    backgroundColor: MASK_COLOR,
+    backgroundColor: colors.overlayDark,
   },
   frame: {
     width: '78%',
@@ -259,7 +258,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   frameScanning: {
-    borderColor: 'rgba(255,255,255,0.7)',
+    borderColor: colors.neutral100,
   },
   frameDetecting: {
     borderColor: colors.warning600,
@@ -289,7 +288,7 @@ const styles = StyleSheet.create({
   },
   hintBox: {
     alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
+    backgroundColor: colors.overlayDark,
     borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -317,7 +316,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(0,0,0,0.65)',
+    backgroundColor: colors.overlayDark,
     borderRadius: radius.pill,
     paddingHorizontal: 18,
     paddingVertical: 12,

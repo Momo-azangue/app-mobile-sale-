@@ -93,7 +93,7 @@ const styles = StyleSheet.create({
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.28)',
+    backgroundColor: colors.overlaySoft,
   },
   panel: {
     width: '100%',

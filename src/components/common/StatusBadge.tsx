@@ -9,9 +9,9 @@ interface StatusBadgeProps {
 }
 
 const statusMeta: Record<InvoiceStatus, { label: string; text: string; bg: string; border: string }> = {
-  PAYE: { label: 'Payee', text: colors.success600, bg: colors.success100, border: '#A7F3D0' },
-  IMPAYE: { label: 'Impayee', text: colors.danger600, bg: colors.danger100, border: '#FCA5A5' },
-  PARTIEL: { label: 'Partiel', text: colors.warning600, bg: colors.warning100, border: '#FCD34D' },
+  PAYE: { label: 'Payee', text: colors.success600, bg: colors.success100, border: colors.success100 },
+  IMPAYE: { label: 'Impayee', text: colors.danger600, bg: colors.danger100, border: colors.danger100 },
+  PARTIEL: { label: 'Partiel', text: colors.warning600, bg: colors.warning100, border: colors.warning100 },
 };
 
 export function StatusBadge({ status }: StatusBadgeProps) {

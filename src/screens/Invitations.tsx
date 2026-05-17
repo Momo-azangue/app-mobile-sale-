@@ -14,9 +14,10 @@ import { ErrorState } from '../components/common/ErrorState';
 import { FloatingActionButton } from '../components/common/FloatingActionButton';
 import { FormModal } from '../components/common/FormModal';
 import { InputField } from '../components/common/InputField';
-import { LoadingState } from '../components/common/LoadingState';
+import { SkeletonList } from '../components/common/SkeletonList';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SegmentedControl, type SegmentedOption } from '../components/common/SegmentedControl';
+import { useToast } from '../components/common/ToastProvider';
 import { useCachedResource } from '../hooks/useCachedResource';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 
@@ -34,6 +35,7 @@ const statusMeta: Record<InvitationStatus, { label: string; text: string; bg: st
 
 export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
   const { session } = useAuth();
+  const toast = useToast();
 
   const [saving, setSaving] = useState(false);
   const [resendingId, setResendingId] = useState<string | null>(null);
@@ -104,7 +106,7 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
 
       closeCreateModal();
       await loadInvitations(false);
-      Alert.alert('Succes', 'Invitation envoyee.');
+      toast.success('Invitation envoyee.');
     } catch (saveError) {
       Alert.alert('Erreur', getErrorMessage(saveError));
     } finally {
@@ -114,18 +116,18 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
 
   const handleRevokeInvitation = (invitation: InvitationResponseDTO) => {
     Alert.alert(
-      'Révoquer l\'invitation',
-      `Annuler l'invitation envoyée à ${invitation.email} ? Le lien d'invitation deviendra invalide.`,
+      "Revoquer l'invitation",
+      `Annuler l'invitation envoyee a ${invitation.email} ? Le lien d'invitation deviendra invalide.`,
       [
         { text: 'Annuler', style: 'cancel' },
         {
-          text: 'Révoquer',
+          text: 'Revoquer',
           style: 'destructive',
           onPress: async () => {
             try {
               await revokeInvitation(invitation.id);
               await loadInvitations(false);
-              Alert.alert('Succès', 'Invitation révoquée.');
+              toast.success('Invitation revoquee.');
             } catch (revokeError) {
               Alert.alert('Erreur', getErrorMessage(revokeError));
             }
@@ -140,7 +142,7 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
     try {
       await resendInvitation(invitation.id);
       await loadInvitations(false);
-      Alert.alert('Succes', 'Invitation renvoyee.');
+      toast.success('Invitation renvoyee.');
     } catch (resendError) {
       Alert.alert('Erreur', getErrorMessage(resendError));
     } finally {
@@ -149,7 +151,7 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
   };
 
   if (loading) {
-    return <LoadingState message='Chargement invitations...' />;
+    return <SkeletonList />;
   }
 
   if (error) {
@@ -206,7 +208,7 @@ export function InvitationsScreen({ refreshSignal }: InvitationsScreenProps) {
                         loading={resendingId === invitation.id}
                       />
                       <AppButton
-                        label='Révoquer'
+                        label='Revoquer'
                         variant='outline'
                         onPress={() => handleRevokeInvitation(invitation)}
                       />
