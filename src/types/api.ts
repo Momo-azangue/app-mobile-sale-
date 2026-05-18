@@ -271,6 +271,8 @@ export interface ProductItemResponseDTO {
   productId: string;
   variantId?: string;
   productName?: string;
+  variantLabel?: string;
+  variantAttributes?: Record<string, string>;
   quantity: number;
   priceAtSale?: number;
   serialNumbers?: string[];
@@ -313,6 +315,8 @@ export interface InvoiceLineDTO {
   productId?: string;
   variantId?: string;
   productName?: string;
+  variantLabel?: string;
+  variantAttributes?: Record<string, string>;
   quantity: number;
   unitPrice: number;
   total: number;
