@@ -44,7 +44,9 @@ import type {
   StockMovementRequestDTO,
   StockMovementResponseDTO,
   SubscriptionPlanDTO,
+  SupplierAccountResponseDTO,
   SupplierDebtResponseDTO,
+  SupplierPaymentRequestDTO,
   TenantRequestDTO,
   TenantResponseDTO,
   TokenValidationResponseDTO,
@@ -752,6 +754,27 @@ export async function getInvoicesSummary(): Promise<InvoicesSummaryResponseDTO> 
 
 export async function getSupplierDebts(): Promise<SupplierDebtResponseDTO[]> {
   const { data } = await api.get<SupplierDebtResponseDTO[]>('/api/v1/reports/supplier-debts');
+  return data;
+}
+
+export async function getSupplierAccounts(): Promise<SupplierAccountResponseDTO[]> {
+  const { data } = await api.get<SupplierAccountResponseDTO[]>('/api/v1/reports/supplier-accounts');
+  return data;
+}
+
+export async function getProviderAccount(providerId: string): Promise<SupplierAccountResponseDTO> {
+  const { data } = await api.get<SupplierAccountResponseDTO>(`/api/v1/providers/${providerId}/account`);
+  return data;
+}
+
+export async function recordSupplierPayment(
+  providerId: string,
+  payload: SupplierPaymentRequestDTO
+): Promise<SupplierAccountResponseDTO> {
+  const { data } = await api.post<SupplierAccountResponseDTO>(
+    `/api/v1/providers/${providerId}/payments`,
+    payload
+  );
   return data;
 }
 

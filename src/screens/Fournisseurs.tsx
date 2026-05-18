@@ -2,9 +2,16 @@ import { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
-import { createProvider, deleteProvider, getSupplierDebts, listProviders, updateProvider } from '../api/services';
+import {
+  createProvider,
+  deleteProvider,
+  getSupplierAccounts,
+  listProviders,
+  recordSupplierPayment,
+  updateProvider,
+} from '../api/services';
 import { getErrorMessage } from '../api/errors';
-import type { ProviderResponseDTO, SupplierDebtResponseDTO } from '../types/api';
+import type { PaymentMethod, ProviderResponseDTO, SupplierAccountResponseDTO } from '../types/api';
 import { useFormatCurrency } from '../context/AppSettingsContext';
 import { colors } from '../theme/tokens';
 import { typography } from '../theme/typography';
@@ -31,7 +38,7 @@ type FournisseursTab = 'dettes' | 'fournisseurs';
 
 interface FournisseursResource {
   providers: ProviderResponseDTO[];
-  supplierDebts: SupplierDebtResponseDTO[];
+  supplierAccounts: SupplierAccountResponseDTO[];
 }
 
 const TAB_OPTIONS: SegmentedOption[] = [
@@ -39,13 +46,33 @@ const TAB_OPTIONS: SegmentedOption[] = [
   { label: 'Fournisseurs', value: 'fournisseurs' },
 ];
 
+const PAYMENT_METHOD_OPTIONS: SegmentedOption[] = [
+  { label: 'Cash', value: 'CASH' },
+  { label: 'Mobile', value: 'MOBILE_MONEY' },
+  { label: 'Carte', value: 'CARTE' },
+];
+
+const LEDGER_TYPE_LABELS = {
+  CONSIGNMENT_IN: 'Stock consigne recu',
+  CONSIGNED_SALE: 'Vente consignee',
+  SUPPLIER_PAYMENT: 'Reglement fournisseur',
+  CONSIGNMENT_RETURN: 'Retour consignation',
+} as const;
+
 export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
   const formatCurrency = useFormatCurrency();
   const toast = useToast();
   const [saving, setSaving] = useState(false);
 
   const [activeTab, setActiveTab] = useState<FournisseursTab>('dettes');
-  const [expandedDebtIds, setExpandedDebtIds] = useState<string[]>([]);
+  const [expandedAccountIds, setExpandedAccountIds] = useState<string[]>([]);
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [paymentProviderId, setPaymentProviderId] = useState<string | null>(null);
+  const [paymentProviderName, setPaymentProviderName] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('CASH');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentNote, setPaymentNote] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -60,11 +87,11 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
   const [editAddress, setEditAddress] = useState('');
 
   const fetchFournisseursResource = useCallback(async (): Promise<FournisseursResource> => {
-    const [providers, supplierDebts] = await Promise.all([
+    const [providers, supplierAccounts] = await Promise.all([
       listProviders(),
-      getSupplierDebts(),
+      getSupplierAccounts(),
     ]);
-    return { providers, supplierDebts };
+    return { providers, supplierAccounts };
   }, []);
 
   const { data, loading, error, reload } = useCachedResource({
@@ -81,7 +108,7 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
   );
   const { refreshing, onRefresh } = usePullToRefresh(() => loadFournisseurs(false));
   const providers = data?.providers ?? [];
-  const supplierDebts = data?.supplierDebts ?? [];
+  const supplierAccounts = data?.supplierAccounts ?? [];
 
   const filteredProviders = useMemo(() => {
     const lower = searchTerm.toLowerCase();
@@ -91,12 +118,52 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
     });
   }, [providers, searchTerm]);
 
-  const toggleDebtExpansion = (providerId: string) => {
-    setExpandedDebtIds((current) =>
+  const toggleAccountExpansion = (providerId: string) => {
+    setExpandedAccountIds((current) =>
       current.includes(providerId)
         ? current.filter((id) => id !== providerId)
         : [...current, providerId],
     );
+  };
+
+  const openPaymentModal = (account: SupplierAccountResponseDTO) => {
+    setPaymentProviderId(account.providerId);
+    setPaymentProviderName(account.providerName || account.providerId);
+    setPaymentAmount(account.balanceDue > 0 ? String(account.balanceDue) : '');
+    setPaymentMethod('CASH');
+    setPaymentReference('');
+    setPaymentNote('');
+    setShowPaymentForm(true);
+  };
+
+  const closePaymentModal = () => {
+    setShowPaymentForm(false);
+    setPaymentProviderId(null);
+    setPaymentProviderName('');
+    setPaymentAmount('');
+    setPaymentMethod('CASH');
+    setPaymentReference('');
+    setPaymentNote('');
+  };
+
+  const parseAmount = (rawValue: string) => Number(rawValue.replace(',', '.').trim());
+
+  const formatDate = (value?: string) => {
+    if (!value) {
+      return '-';
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return '-';
+    }
+    return date.toLocaleDateString();
+  };
+
+  const formatLineAmount = (lineType: SupplierAccountResponseDTO['lines'][number]['type'], amount: number) => {
+    if (lineType === 'SUPPLIER_PAYMENT') {
+      return `-${formatCurrency(amount)}`;
+    }
+    return formatCurrency(amount);
   };
 
   const resetForm = () => {
@@ -201,6 +268,36 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
     }
   };
 
+  const handleRecordSupplierPayment = async () => {
+    if (!paymentProviderId) {
+      return;
+    }
+
+    const amount = parseAmount(paymentAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      Alert.alert('Validation', 'Le montant du reglement doit etre superieur a 0.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await recordSupplierPayment(paymentProviderId, {
+        amount,
+        method: paymentMethod,
+        reference: paymentReference.trim() || undefined,
+        note: paymentNote.trim() || undefined,
+      });
+
+      closePaymentModal();
+      await loadFournisseurs(false);
+      toast.success('Reglement fournisseur enregistre.');
+    } catch (paymentError) {
+      Alert.alert('Erreur', getErrorMessage(paymentError));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return <SkeletonList />;
   }
@@ -227,30 +324,31 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
         />
 
         {activeTab === 'dettes' ? (
-          supplierDebts.length === 0 ? (
+          supplierAccounts.length === 0 ? (
             <EmptyState
               icon='check-circle'
-              title='Aucune dette fournisseur en cours'
-              description='Les stocks consignes restants apparaitront ici avec leur montant fournisseur.'
+              title='Aucun compte fournisseur'
+              description='Les consignations, ventes et reglements fournisseur apparaitront ici.'
             />
           ) : (
             <View style={styles.list}>
-              {supplierDebts.map((debt) => {
-                const expanded = expandedDebtIds.includes(debt.providerId);
+              {supplierAccounts.map((account) => {
+                const expanded = expandedAccountIds.includes(account.providerId);
                 return (
-                  <AppCard key={debt.providerId} style={styles.providerCard}>
+                  <AppCard key={account.providerId} style={styles.providerCard}>
                     <Pressable
                       style={styles.debtHeader}
-                      onPress={() => toggleDebtExpansion(debt.providerId)}
+                      onPress={() => toggleAccountExpansion(account.providerId)}
                     >
                       <View style={styles.debtMain}>
-                        <Text style={styles.providerName}>{debt.providerName || debt.providerId}</Text>
+                        <Text style={styles.providerName}>{account.providerName || account.providerId}</Text>
                         <Text style={styles.providerMeta}>
-                          {debt.totalConsignedUnits} unite{debt.totalConsignedUnits > 1 ? 's' : ''} consignee{debt.totalConsignedUnits > 1 ? 's' : ''}
+                          {account.currentConsignedUnits} en stock sur {account.totalConsignedUnitsReceived} recu{account.totalConsignedUnitsReceived > 1 ? 's' : ''}
                         </Text>
                       </View>
                       <View style={styles.debtAmountWrap}>
-                        <Text style={styles.debtAmount}>{formatCurrency(debt.totalDebt)}</Text>
+                        <Text style={styles.debtLabel}>Solde restant</Text>
+                        <Text style={styles.debtAmount}>{formatCurrency(account.balanceDue)}</Text>
                         <Feather
                           name={expanded ? 'chevron-up' : 'chevron-down'}
                           size={18}
@@ -259,18 +357,66 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
                       </View>
                     </Pressable>
 
+                    <View style={styles.metricsGrid}>
+                      <View style={styles.metricItem}>
+                        <Text style={styles.metricLabel}>Valeur depart</Text>
+                        <Text style={styles.metricValue}>{formatCurrency(account.totalConsignedValue)}</Text>
+                      </View>
+                      <View style={styles.metricItem}>
+                        <Text style={styles.metricLabel}>Vendu consigne</Text>
+                        <Text style={styles.metricValue}>{account.soldConsignedUnits}</Text>
+                      </View>
+                      <View style={styles.metricItem}>
+                        <Text style={styles.metricLabel}>Dette creee</Text>
+                        <Text style={styles.metricValue}>{formatCurrency(account.totalDebt)}</Text>
+                      </View>
+                      <View style={styles.metricItem}>
+                        <Text style={styles.metricLabel}>Deja regle</Text>
+                        <Text style={styles.metricValue}>{formatCurrency(account.totalPaid)}</Text>
+                      </View>
+                      <View style={styles.metricItem}>
+                        <Text style={styles.metricLabel}>Stock restant</Text>
+                        <Text style={styles.metricValue}>{formatCurrency(account.stockValueRemaining)}</Text>
+                      </View>
+                      <View style={styles.metricItem}>
+                        <Text style={styles.metricLabel}>Marge brute</Text>
+                        <Text style={styles.metricValue}>{formatCurrency(account.grossMargin)}</Text>
+                      </View>
+                    </View>
+
+                    {account.balanceDue > 0 ? (
+                      <AppButton
+                        label='Enregistrer un reglement'
+                        variant='outline'
+                        onPress={() => openPaymentModal(account)}
+                      />
+                    ) : null}
+
                     {expanded ? (
                       <View style={styles.debtLines}>
-                        {debt.lines.map((line) => (
-                          <View key={`${line.productId}-${line.variantId}`} style={styles.debtLine}>
+                        {account.lines.map((line, index) => (
+                          <View key={line.id ?? `${account.providerId}-${line.type}-${index}`} style={styles.debtLine}>
                             <View style={styles.debtLineMain}>
-                              <Text style={styles.debtLineTitle}>{line.productName}</Text>
-                              <Text style={styles.providerMeta}>{line.variantLabel}</Text>
+                              <Text style={styles.debtLineTitle}>{LEDGER_TYPE_LABELS[line.type]}</Text>
                               <Text style={styles.providerMeta}>
-                                {line.consignedQuantity} x {formatCurrency(line.providerPrice)}
+                                {line.productName ? `${line.productName}${line.variantLabel ? ` - ${line.variantLabel}` : ''}` : line.note || '-'}
                               </Text>
+                              <Text style={styles.providerMeta}>
+                                {formatDate(line.date)} - {line.quantity} unite{line.quantity > 1 ? 's' : ''}
+                                {line.providerPrice ? ` x ${formatCurrency(line.providerPrice)}` : ''}
+                              </Text>
+                              {line.margin ? (
+                                <Text style={styles.providerMeta}>Marge: {formatCurrency(line.margin)}</Text>
+                              ) : null}
                             </View>
-                            <Text style={styles.debtLineAmount}>{formatCurrency(line.lineDebt)}</Text>
+                            <Text
+                              style={[
+                                styles.debtLineAmount,
+                                line.type === 'SUPPLIER_PAYMENT' && styles.paymentLineAmount,
+                              ]}
+                            >
+                              {formatLineAmount(line.type, line.amount)}
+                            </Text>
                           </View>
                         ))}
                       </View>
@@ -433,6 +579,63 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
           </View>
         </View>
       </FormModal>
+
+      <FormModal
+        visible={showPaymentForm}
+        title='Reglement fournisseur'
+        onClose={closePaymentModal}
+      >
+        <Text style={styles.paymentProviderName}>{paymentProviderName}</Text>
+        <InputField
+          label='Montant regle'
+          value={paymentAmount}
+          onChangeText={setPaymentAmount}
+          placeholder='0'
+          keyboardType='decimal-pad'
+        />
+        <View style={styles.formSection}>
+          <Text style={styles.fieldLabel}>Moyen de paiement</Text>
+          <SegmentedControl
+            options={PAYMENT_METHOD_OPTIONS}
+            value={paymentMethod}
+            onChange={(value) => setPaymentMethod(value as PaymentMethod)}
+          />
+        </View>
+        <InputField
+          label='Reference (optionnel)'
+          value={paymentReference}
+          onChangeText={setPaymentReference}
+          placeholder='Numero recu, transaction...'
+        />
+        <InputField
+          label='Note (optionnel)'
+          value={paymentNote}
+          onChangeText={setPaymentNote}
+          placeholder='Details du reglement'
+          multiline
+          inputStyle={styles.multilineInput}
+        />
+
+        <View style={styles.actionRow}>
+          <View style={styles.actionItem}>
+            <AppButton
+              label='Retour'
+              variant='outline'
+              onPress={closePaymentModal}
+              disabled={saving}
+            />
+          </View>
+          <View style={styles.actionItem}>
+            <AppButton
+              label={saving ? 'Enregistrement...' : 'Enregistrer'}
+              onPress={() => {
+                void handleRecordSupplierPayment();
+              }}
+              disabled={saving}
+            />
+          </View>
+        </View>
+      </FormModal>
     </View>
   );
 }
@@ -495,6 +698,32 @@ const styles = StyleSheet.create({
     ...typography.bodyMedium,
     color: colors.danger600,
   },
+  debtLabel: {
+    ...typography.caption,
+    color: colors.neutral500,
+  },
+  metricsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+  metricItem: {
+    width: '48%',
+    padding: 10,
+    backgroundColor: colors.neutral50,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.neutral200,
+  },
+  metricLabel: {
+    ...typography.caption,
+    color: colors.neutral500,
+  },
+  metricValue: {
+    ...typography.label,
+    color: colors.neutral900,
+    marginTop: 2,
+  },
   debtLines: {
     marginTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
@@ -519,6 +748,24 @@ const styles = StyleSheet.create({
   debtLineAmount: {
     ...typography.label,
     color: colors.neutral900,
+  },
+  paymentLineAmount: {
+    color: colors.success600,
+  },
+  paymentProviderName: {
+    ...typography.bodyMedium,
+    color: colors.neutral900,
+  },
+  formSection: {
+    gap: 8,
+  },
+  fieldLabel: {
+    ...typography.label,
+    color: colors.neutral700,
+  },
+  multilineInput: {
+    minHeight: 86,
+    textAlignVertical: 'top',
   },
   actionRow: {
     flexDirection: 'row',

@@ -520,6 +520,55 @@ export interface SupplierDebtResponseDTO {
   lines: SupplierDebtLineDTO[];
 }
 
+export type SupplierLedgerEntryType =
+  | 'CONSIGNMENT_IN'
+  | 'CONSIGNED_SALE'
+  | 'SUPPLIER_PAYMENT'
+  | 'CONSIGNMENT_RETURN';
+
+export interface SupplierAccountLineDTO {
+  id?: string;
+  type: SupplierLedgerEntryType;
+  productId?: string;
+  productName?: string;
+  variantId?: string;
+  variantLabel?: string;
+  quantity: number;
+  providerPrice?: number;
+  saleUnitPrice?: number;
+  amount: number;
+  margin?: number;
+  saleId?: string;
+  stockMovementId?: string;
+  paymentMethod?: PaymentMethod;
+  reference?: string;
+  note?: string;
+  date?: string;
+}
+
+export interface SupplierAccountResponseDTO {
+  providerId: string;
+  providerName: string;
+  totalConsignedUnitsReceived: number;
+  currentConsignedUnits: number;
+  soldConsignedUnits: number;
+  totalConsignedValue: number;
+  stockValueRemaining: number;
+  totalDebt: number;
+  totalPaid: number;
+  balanceDue: number;
+  grossMargin: number;
+  lines: SupplierAccountLineDTO[];
+}
+
+export interface SupplierPaymentRequestDTO {
+  amount: number;
+  method?: PaymentMethod;
+  reference?: string;
+  note?: string;
+  date?: string;
+}
+
 // ── User self-service ─────────────────────────────────────────────────────────
 
 export interface ChangePasswordRequestDTO {
