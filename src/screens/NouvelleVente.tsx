@@ -32,8 +32,10 @@ import { AppCard } from '../components/common/AppCard';
 import { BarcodeScanner } from '../components/common/BarcodeScanner';
 import { ChipGroup, type ChipOption } from '../components/common/ChipGroup';
 import { InputField } from '../components/common/InputField';
+import { MoneyInput } from '../components/common/MoneyInput';
 import { SearchableSelectField, type SearchableSelectOption } from '../components/common/SearchableSelectField';
 import { useToast } from '../components/common/ToastProvider';
+import { useFormatCurrency } from '../context/AppSettingsContext';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 import { ImeiCaptureRow } from './sales/ImeiCaptureRow';
 
@@ -120,6 +122,7 @@ function formatSaleError(error: unknown): string {
 
 export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: NouvelleVenteProps) {
   const toast = useToast();
+  const fmtCurrency = useFormatCurrency();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -701,12 +704,11 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
 
         {status === 'PARTIEL' ? (
           <View style={styles.formGroup}>
-            <InputField
+            <MoneyInput
               label='Montant avance'
               value={initialPaidAmount}
               onChangeText={setInitialPaidAmount}
-              keyboardType='decimal-pad'
-              placeholder='Ex: 100'
+              placeholder='100'
             />
             <Text style={styles.statusHint}>Doit etre strictement inferieur au total de la vente.</Text>
           </View>
@@ -715,7 +717,7 @@ export function NouvelleVenteScreen({ onBack, onCreated, refreshSignal }: Nouvel
         {draftTotal > 0 ? (
           <View style={styles.totalBox}>
             <Text style={styles.totalLabel}>Total provisoire</Text>
-            <Text style={styles.totalPreview}>{draftTotal.toFixed(2)}</Text>
+            <Text style={styles.totalPreview}>{fmtCurrency(draftTotal)}</Text>
           </View>
         ) : null}
 
@@ -817,6 +819,7 @@ function SaleLineCard({
   onImeiChange,
   onImeiScan,
 }: SaleLineCardProps) {
+  const fmtCurrency = useFormatCurrency();
   const selectedVariant = variants.find((variant) => variant.id === line.variantId);
   const isSerial = product?.trackingMode === 'SERIAL';
   const saleableVariants = isSerial
@@ -843,7 +846,7 @@ function SaleLineCard({
     ? [product.name, selectedVariant ? variantLabel(selectedVariant) : null].filter(Boolean).join(' - ')
     : `Ligne ${index + 1}`;
   const summaryMeta = product
-    ? `${quantity || 0} unite${quantity > 1 ? 's' : ''}${lineTotal != null ? ` - Total ${lineTotal.toFixed(2)}` : ''}`
+    ? `${quantity || 0} unite${quantity > 1 ? 's' : ''}${lineTotal != null ? ` - Total ${fmtCurrency(lineTotal)}` : ''}`
     : 'A completer';
 
   if (!expanded) {
@@ -958,11 +961,10 @@ function SaleLineCard({
           placeholder='1'
           containerStyle={styles.flexHalf}
         />
-        <InputField
+        <MoneyInput
           label='Prix vente'
           value={line.priceAtSale}
           onChangeText={onPriceChange}
-          keyboardType='decimal-pad'
           placeholder='100'
           containerStyle={styles.flexHalf}
         />

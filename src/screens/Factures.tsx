@@ -33,6 +33,7 @@ import { EmptyState } from '../components/common/EmptyState';
 import { ErrorState } from '../components/common/ErrorState';
 import { FormModal } from '../components/common/FormModal';
 import { InputField } from '../components/common/InputField';
+import { MoneyInput } from '../components/common/MoneyInput';
 import { SkeletonList } from '../components/common/SkeletonList';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
@@ -479,12 +480,11 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
           onChangeText={setManualClientPhone}
           placeholder='+225000000000'
         />
-        <InputField
+        <MoneyInput
           label='Montant'
           value={manualAmount}
           onChangeText={setManualAmount}
-          placeholder='Ex: 15000'
-          keyboardType='numeric'
+          placeholder='15 000'
         />
         <InputField
           label='Echeance (optionnel)'
@@ -562,12 +562,11 @@ export function FacturesScreen({ refreshSignal }: FacturesScreenProps) {
           </View>
         ) : null}
 
-        <InputField
+        <MoneyInput
           label='Montant a payer'
           value={paymentAmount}
           onChangeText={setPaymentAmount}
-          placeholder='Ex: 10000'
-          keyboardType='numeric'
+          placeholder='10 000'
         />
 
         <View style={styles.paymentMethodWrap}>

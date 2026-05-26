@@ -11,6 +11,7 @@ import type {
 import { AppButton } from '../../components/common/AppButton';
 import { FormModal } from '../../components/common/FormModal';
 import { InputField } from '../../components/common/InputField';
+import { MoneyInput } from '../../components/common/MoneyInput';
 import { SearchableSelectField, type SearchableSelectOption } from '../../components/common/SearchableSelectField';
 import { SegmentedControl } from '../../components/common/SegmentedControl';
 import { colors, radius } from '../../theme/tokens';
@@ -167,12 +168,11 @@ export function ProductFormModal({
             containerStyle={styles.flex}
           />
         </View>
-        <InputField
+        <MoneyInput
           label='Prix reference'
           value={price}
           onChangeText={setPrice}
-          keyboardType='decimal-pad'
-          placeholder='Ex: 125000'
+          placeholder='125 000'
         />
         <InputField
           label='Description'

@@ -10,6 +10,7 @@ import type {
 import { AppButton } from '../../components/common/AppButton';
 import { FormModal } from '../../components/common/FormModal';
 import { InputField } from '../../components/common/InputField';
+import { MoneyInput } from '../../components/common/MoneyInput';
 import { SearchableSelectField, type SearchableSelectOption } from '../../components/common/SearchableSelectField';
 import { colors } from '../../theme/tokens';
 import { typography } from '../../theme/typography';
@@ -257,12 +258,11 @@ export function VariantFormModal({
           />
         </View>
         <View style={styles.row}>
-          <InputField
+          <MoneyInput
             label='Prix'
             value={price}
             onChangeText={setPrice}
             placeholder={product.price != null ? String(product.price) : 'Hérite du modele'}
-            keyboardType='decimal-pad'
             containerStyle={styles.flex}
           />
           <InputField
@@ -315,12 +315,11 @@ export function VariantFormModal({
               onChange={setProviderId}
               disabled={providers.length === 0}
             />
-            <InputField
+            <MoneyInput
               label="Prix d'achat"
               value={providerPrice}
               onChangeText={setProviderPrice}
               placeholder='Optionnel'
-              keyboardType='decimal-pad'
             />
           </>
         ) : null}

@@ -22,6 +22,7 @@ import { ErrorState } from '../components/common/ErrorState';
 import { FloatingActionButton } from '../components/common/FloatingActionButton';
 import { FormModal } from '../components/common/FormModal';
 import { InputField } from '../components/common/InputField';
+import { MoneyInput } from '../components/common/MoneyInput';
 import { SkeletonList } from '../components/common/SkeletonList';
 import { ScreenHeader } from '../components/common/ScreenHeader';
 import { SearchField } from '../components/common/SearchField';
@@ -586,12 +587,11 @@ export function FournisseursScreen({ refreshSignal }: FournisseursScreenProps) {
         onClose={closePaymentModal}
       >
         <Text style={styles.paymentProviderName}>{paymentProviderName}</Text>
-        <InputField
+        <MoneyInput
           label='Montant regle'
           value={paymentAmount}
           onChangeText={setPaymentAmount}
           placeholder='0'
-          keyboardType='decimal-pad'
         />
         <View style={styles.formSection}>
           <Text style={styles.fieldLabel}>Moyen de paiement</Text>

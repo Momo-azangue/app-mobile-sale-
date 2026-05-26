@@ -1,11 +1,12 @@
 import { ComponentProps, useCallback, useMemo, useState } from 'react';
-import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import {
   createProduct,
   createStockMovement,
   deleteProduct,
+  getProductUnitBySerialNumber,
   listCategories,
   listClients,
   listProducts,
@@ -20,10 +21,11 @@ import { ChipGroup, type ChipOption } from '../components/common/ChipGroup';
 import { EmptyState } from '../components/common/EmptyState';
 import { ErrorState } from '../components/common/ErrorState';
 import { FormModal } from '../components/common/FormModal';
-import { ImeiInput } from '../components/common/ImeiInput';
 import { InputField } from '../components/common/InputField';
+import { MoneyInput } from '../components/common/MoneyInput';
 import { SkeletonList } from '../components/common/SkeletonList';
 import { ScreenHeader } from '../components/common/ScreenHeader';
+import { BarcodeScanner } from '../components/common/BarcodeScanner';
 import { SearchableSelectField, type SearchableSelectOption } from '../components/common/SearchableSelectField';
 import { SearchField } from '../components/common/SearchField';
 import { SegmentedControl } from '../components/common/SegmentedControl';
@@ -109,6 +111,10 @@ function parseSerialNumbers(value: string): string[] {
     .filter(Boolean);
 }
 
+function normalizeSerialNumber(value: string): string {
+  return value.trim();
+}
+
 function acceptsSerialUnitCreation(type: MovementType): boolean {
   return type === 'ENTREE' || type === 'CONSIGNATION_ENTREE' || type === 'PRODUCTION';
 }
@@ -177,6 +183,7 @@ export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct 
 
   const [showMovementModal, setShowMovementModal] = useState(false);
   const [savingMovement, setSavingMovement] = useState(false);
+  const [movementImeiScannerVisible, setMovementImeiScannerVisible] = useState(false);
   const [movementProductId, setMovementProductId] = useState('');
   const [movementVariantId, setMovementVariantId] = useState('');
   const [movementQuantity, setMovementQuantity] = useState('1');
@@ -420,6 +427,7 @@ export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct 
 
   const closeMovementModal = () => {
     setShowMovementModal(false);
+    setMovementImeiScannerVisible(false);
     setMovementProductId('');
     setMovementVariantId('');
     setMovementQuantity('1');
@@ -438,6 +446,47 @@ export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct 
     setMovementProductId(productId);
     setMovementVariantId(variants[0]?.id ?? '');
     setMovementSerialNumbers('');
+  };
+
+  const handleMovementImeiScan = async (code: string) => {
+    setMovementImeiScannerVisible(false);
+    const serial = normalizeSerialNumber(code);
+    if (!serial) {
+      return;
+    }
+    if (!showMovementSerialNumbers) {
+      Alert.alert('Scan indisponible', 'Selectionnez un produit SERIAL et un type de mouvement entrant.');
+      return;
+    }
+
+    const currentSerials = parseSerialNumbers(movementSerialNumbers);
+    const alreadyEntered = currentSerials.some(
+      (candidate) => candidate.toUpperCase() === serial.toUpperCase(),
+    );
+    if (alreadyEntered) {
+      Alert.alert('Validation', 'Cet IMEI est deja saisi dans ce mouvement.');
+      return;
+    }
+
+    try {
+      const existingUnit = await getProductUnitBySerialNumber(serial);
+      Alert.alert(
+        'IMEI deja connu',
+        `L'IMEI ${existingUnit.serialNumber} existe deja dans le stock. Une entree ne doit pas recreer une unite existante.`,
+      );
+      return;
+    } catch {
+      // Un 404 est le cas normal pour une nouvelle unite entrante.
+    }
+
+    const nextSerials = [...currentSerials, serial];
+    setMovementSerialNumbers(nextSerials.join('\n'));
+
+    const parsedQuantity = Number(movementQuantity.trim());
+    const currentQuantity = Number.isFinite(parsedQuantity) && parsedQuantity > 0
+      ? Math.trunc(parsedQuantity)
+      : 0;
+    setMovementQuantity(String(Math.max(currentQuantity, nextSerials.length, 1)));
   };
 
   const handleCreateMovement = async () => {
@@ -795,13 +844,36 @@ export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct 
         />
 
         {showMovementSerialNumbers ? (
-          <ImeiInput
-            label='IMEI / numeros de serie'
-            value={movementSerialNumbers}
-            onChangeText={setMovementSerialNumbers}
-            placeholder='Un IMEI par ligne'
-            helperText={`Renseignez exactement ${movementQuantity || '0'} IMEI.`}
-          />
+          <View style={styles.imeiSection}>
+            <View style={styles.imeiHeader}>
+              <View style={styles.imeiHeaderText}>
+                <Text style={styles.formLabel}>IMEI / numeros de serie</Text>
+                <Text style={styles.helperText}>Renseignez exactement {movementQuantity || '0'} IMEI.</Text>
+              </View>
+              <Pressable
+                style={styles.imeiScanButton}
+                onPress={() => setMovementImeiScannerVisible(true)}
+                hitSlop={8}
+              >
+                <Feather name='camera' size={18} color={colors.white} />
+                <Text style={styles.imeiScanText}>Scanner</Text>
+              </Pressable>
+            </View>
+            <TextInput
+              value={movementSerialNumbers}
+              onChangeText={setMovementSerialNumbers}
+              placeholder='Un IMEI par ligne'
+              placeholderTextColor={colors.neutral400}
+              multiline
+              autoCapitalize='characters'
+              autoCorrect={false}
+              style={styles.imeiTextarea}
+            />
+            <Text style={styles.helperText}>
+              {parseSerialNumbers(movementSerialNumbers).length} IMEI saisi
+              {parseSerialNumbers(movementSerialNumbers).length > 1 ? 's' : ''}
+            </Text>
+          </View>
         ) : null}
 
         {incomingMovement ? (
@@ -815,12 +887,11 @@ export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct 
               onChange={setMovementProviderId}
               disabled={providers.length === 0}
             />
-            <InputField
+            <MoneyInput
               label="Prix d'achat unitaire"
               value={movementUnitPurchasePrice}
               onChangeText={setMovementUnitPurchasePrice}
               placeholder='Optionnel'
-              keyboardType='decimal-pad'
             />
           </>
         ) : null}
@@ -866,6 +937,16 @@ export function StocksScreen({ refreshSignal, onProductChanged, onSelectProduct 
           </View>
         </View>
       </FormModal>
+
+      <BarcodeScanner
+        visible={movementImeiScannerVisible}
+        expect='imei'
+        hint="Visez l'IMEI de l'article a entrer en stock"
+        onClose={() => setMovementImeiScannerVisible(false)}
+        onScan={(code) => {
+          void handleMovementImeiScan(code);
+        }}
+      />
 
     </View>
   );
@@ -1028,6 +1109,46 @@ const styles = StyleSheet.create({
   helperText: {
     ...typography.caption,
     color: colors.neutral500,
+  },
+  imeiSection: {
+    gap: 8,
+  },
+  imeiHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  imeiHeaderText: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  imeiScanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minHeight: 40,
+    paddingHorizontal: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.neutral900,
+  },
+  imeiScanText: {
+    ...typography.label,
+    color: colors.white,
+  },
+  imeiTextarea: {
+    ...typography.body,
+    minHeight: 104,
+    borderWidth: 1,
+    borderColor: colors.neutral300,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: colors.neutral900,
+    backgroundColor: colors.white,
+    textAlignVertical: 'top',
   },
   list: {
     gap: 12,
